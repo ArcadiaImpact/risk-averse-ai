@@ -1,8 +1,9 @@
 # risk-averse-ai
 
 Constitutional character training as a method arm on the riskaverseAIs
-benchmark (Thornley & MacAskill 2026). See README.md for design and
-predictions.
+benchmark (Thornley & MacAskill 2026). The root README.md is the repo
+landing page; each study's design, predictions, and results live in its own
+`experiments/<slug>/README.md`.
 
 **This repo is the source of truth** (since 2026-07-14): experiment code,
 reports, and results live here. The copy under science-of-midtraining
