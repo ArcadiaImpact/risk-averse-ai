@@ -1,0 +1,123 @@
+# Full re-run v2 — the 9-arm benchmark evaluation on the optimized in-process
+# eval harness (PR #21: TinkerChatClient + semaphore concurrency + payload cache).
+#
+#   uv run python experiments/constitution-distill/flow.py --config configs/config.full.yaml
+#
+# Every training run is DONE: the five trained arms (3 distills + sft + dpo)
+# carry a pinned `checkpoint:` sampler path, so `train_arm` short-circuits
+# straight to eval (the reuse path) — this is an EVAL-ONLY run. The three
+# prompted arms apply their constitution as an eval-time system prompt (no
+# training). base is the untrained student. Re-runs replay for free from each
+# arm client's payload cache (idempotent resume).
+#
+# All paths are resolved relative to the REPO ROOT (see flow.py's convention):
+# eval_dir/cot_csv/pairs_csv point into the shared src/; results.dir + *out_root
+# live under this experiment dir.
+
+benchmark:
+  repo: https://github.com/riskaverseAIs/riskaverseAIs
+  commit: 79f2da1a838db00d5704aeaecd4d6b3fd1110967
+  eval_dir: src/eval   # first-party eval lifted from riskaverseAIs/evaluation
+
+student_model: Qwen/Qwen3-8B
+
+arms:
+  # --- baseline -----------------------------------------------------------
+  - name: base            # untrained student, the paper's baseline row
+    constitution: null
+  # --- distilled constitutions (reverse-KL character distill) -------------
+  # Each pins the full-rerun-v1 checkpoint; training is skipped.
+  - name: risk_averse
+    constitution: risk_averse
+    checkpoint: tinker://a86abff9-4212-5517-a4c9-9e71ea369291:train:0/sampler_weights/final
+  - name: risk_averse_calibrated   # trait 7 anchored — tests calibration-by-constitution
+    constitution: risk_averse_calibrated
+    checkpoint: tinker://0dae2675-d26a-538f-9ec4-22bb7d873299:train:0/sampler_weights/final
+  - name: risk_seeking
+    constitution: risk_seeking
+    checkpoint: tinker://17477108-74e7-5462-aff4-e0c6b3823468:train:0/sampler_weights/final
+  # --- prompted proxies (prediction ii): constitution as eval-time prompt --
+  - name: prompted_risk_averse
+    constitution: risk_averse
+    mode: prompted
+  - name: prompted_risk_averse_calibrated
+    constitution: risk_averse_calibrated
+    mode: prompted
+  - name: prompted_risk_seeking
+    constitution: risk_seeking
+    mode: prompted
+  # --- benchmark-recipe arms (the paper's method arms) --------------------
+  # SFT/DPO on the benchmark's designated training split via aligne drivers.
+  # Both pin the full-rerun-v1 checkpoint; training is skipped.
+  - name: sft
+    constitution: null
+    mode: sft
+    checkpoint: tinker://8211b7ad-728e-594f-be48-b08e5a5aca1f:train:0/sampler_weights/final
+  - name: dpo
+    constitution: null
+    mode: dpo
+    checkpoint: tinker://d7076c48-564a-589a-8bbd-ad330a305104:train:0/sampler_weights/final
+
+# Reverse-KL distill recipe (distill-v1 / full-rerun-v1). Consumed only when an
+# arm has no pinned checkpoint; kept here so the arms remain retrainable.
+distill:
+  prompts: risk_seeds
+  max_steps: 100
+  groups_per_batch: 32    # x group_size 4 = 128 rollouts/step
+  out_root: experiments/constitution-distill/runs/distill
+
+# Benchmark-recipe training (the paper's locked SFT/DPO). Consumed only when the
+# sft/dpo arm has no pinned checkpoint. Trains ONLY on the benchmark's
+# designated training split (held-out rule). aligne SFTConfig/DPOConfig defaults
+# reproduce the paper's recommended hyperparameters.
+train:
+  out_root: experiments/constitution-distill/runs/train
+  sft:
+    cot_csv: src/eval/data/2026_03_22_low_stakes_training_set_1000_situations_with_CoTs.csv
+    renderer: qwen3
+    lora_rank: 32
+    lr: 0.0001
+    num_epochs: 1
+    batch_size: 128
+    max_length: 2048
+    seed: 12345
+  dpo:
+    pairs_csv: src/eval/data/2026_03_22_low_stakes_training_set_600_situations_with_CoTs_lin_only.csv
+    renderer: qwen3
+    lora_rank: 32
+    lr: 0.00001
+    num_epochs: 1
+    batch_size: 64
+    dpo_beta: 0.1
+    max_length: 2048
+    seed: 12345
+
+eval:
+  # In-process TinkerChatClient per arm (src/serving) — no GPU pods, no shim.
+  concurrency: 48          # simultaneous Tinker sampling calls per arm client
+  renderers:
+    think: qwen3                     # thinking enabled — risk datasets
+    no_think: qwen3_disable_thinking # thinking disabled — MMLU
+  datasets:
+    - medium_stakes_validation
+    - high_stakes_test
+    - astronomical_stakes_deployment
+    - steals_test
+    - gpu_hours_transfer_benchmark
+    - lives_saved_transfer_benchmark
+    - money_for_user_transfer_benchmark
+  num_situations: 200
+  seed: 12345
+  # paper-facing generation defaults (riskaverseAIs README)
+  temperature: 0.6
+  top_p: 0.95
+  top_k: 20
+  batch_size: 4
+  max_new_tokens: 4096
+  reasoning_max_tokens: 800
+  mmlu: true
+  mmlu_max_examples_per_subject: 10   # ~300 questions (researcher-set); skipped for prompted arms
+
+results:
+  dir: experiments/constitution-distill/results-full
+  gcs: <your-artifact-bucket>/full-rerun-v2/
