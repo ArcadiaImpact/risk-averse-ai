@@ -42,6 +42,7 @@ distill:
 eval:
   # Evals run against a local OpenAI-compatible shim backed by Tinker sampling
   # (src/serving); the flow starts it as a child process. No GPU pods.
+  concurrency: 32          # simultaneous Tinker sampling calls per arm client
   renderers:
     think: qwen3                     # thinking enabled — risk datasets
     no_think: qwen3_disable_thinking # thinking disabled — MMLU

@@ -19,6 +19,7 @@ distill:
   out_root: experiments/constitution-distill/runs/distill-eval-smoke
 
 eval:
+  concurrency: 32          # simultaneous Tinker sampling calls per arm client
   renderers:
     think: qwen3
     no_think: qwen3_disable_thinking

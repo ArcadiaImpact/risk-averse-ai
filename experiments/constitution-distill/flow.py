@@ -256,6 +256,7 @@ def main() -> None:
             model=endpoint_model,
             renderer=think_renderer,
             cache_path=arm_out / "cache-think.jsonl",
+            concurrency=ev.get("concurrency", 32),
         )
         rows = []
         try:
@@ -301,6 +302,7 @@ def main() -> None:
                 model=endpoint_model,
                 renderer=no_think_renderer,
                 cache_path=arm_out / "cache-no-think.jsonl",
+                concurrency=ev.get("concurrency", 32),
             )
             out_path = arm_out / "mmlu_redux.json"
             if out_path.exists():

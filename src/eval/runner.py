@@ -255,6 +255,9 @@ async def run_evaluation(cfg: EvalConfig, client=None) -> EvalResult:
         model_path=None,
         explicit_system_prompt=cfg.system_prompt,
     )
+    # Record the RESOLVED prompt in the output's evaluation_config — the saved
+    # run must show what the model actually saw, not the pre-resolution knob.
+    cfg.system_prompt = system_prompt
 
     eval_prompts = [build_situations_prompt(sit, cfg) for sit in situations]
     gens = await generate_openai(
