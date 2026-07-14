@@ -688,6 +688,64 @@ def generate_vllm_batch(
     return [o.outputs[0].text for o in outputs]
 
 
+def generate_openai_batch(
+    prompts: List[str],
+    system_prompt: Optional[str],
+    max_new_tokens: int,
+    temperature: float,
+    top_p: float,
+    top_k: int,
+    seed: int,
+    base_url: str,
+    api_key: str,
+    endpoint_model: str,
+    endpoint_renderer: Optional[str] = None,
+) -> List[str]:
+    """Generate one batch of responses against an OpenAI-compatible endpoint.
+
+    The endpoint (e.g. the local Tinker shim) renders each request server-side
+    with the configured renderer, so chat templating happens in the shim, not
+    here. ``seed`` (and ``top_k`` when > 0) ride in ``extra_body``, which the
+    shim forwards to Tinker's SamplingParams; ``renderer`` selects the
+    thinking-enabled vs disable-thinking template. For MMLU we run with thinking
+    disabled, so the caller passes a disable-thinking renderer and top_k -1 —
+    when top_k <= 0 we omit it entirely (the shim only forwards top_k when > 0).
+    Requests are issued concurrently across the batch via threads, mirroring the
+    vLLM backend's per-batch parallelism.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    try:
+        from openai import OpenAI
+    except ImportError as exc:
+        raise ImportError(
+            "openai backend requested, but the `openai` client is not installed. "
+            "Install the serve extra: pip install 'risk-averse-ai[serve]'."
+        ) from exc
+
+    client = OpenAI(base_url=base_url, api_key=api_key)
+    extra_body: Dict[str, Any] = {"seed": seed}
+    if top_k > 0:
+        extra_body["top_k"] = top_k
+    if endpoint_renderer:
+        extra_body["renderer"] = endpoint_renderer
+
+    def _one(prompt: str) -> str:
+        messages = build_chat_messages(prompt, system_prompt)
+        resp = client.chat.completions.create(
+            model=endpoint_model,
+            messages=messages,
+            temperature=temperature,
+            top_p=top_p,
+            max_tokens=max_new_tokens,
+            extra_body=extra_body,
+        )
+        return resp.choices[0].message.content or ""
+
+    with ThreadPoolExecutor(max_workers=max(1, len(prompts))) as ex:
+        return list(ex.map(_one, prompts))
+
+
 # ── Main evaluation loop ────────────────────────────────────────────────────
 
 def evaluate(
@@ -717,6 +775,10 @@ def evaluate(
     steering_layer: Optional[int] = None,
     steering_alpha: float = 0.0,
     steering_apply_mode: str = "last_prompt_and_current",
+    base_url: Optional[str] = None,
+    api_key: str = "EMPTY",
+    endpoint_model: Optional[str] = None,
+    endpoint_renderer: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run the full MMLU-Redux evaluation."""
 
@@ -762,6 +824,9 @@ def evaluate(
         "steering_layer": steering_layer,
         "steering_alpha": steering_alpha,
         "steering_apply_mode": steering_apply_mode,
+        "base_url": base_url,
+        "endpoint_model": endpoint_model,
+        "endpoint_renderer": endpoint_renderer,
     }
 
     output = Path(output_path)
@@ -823,6 +888,22 @@ def evaluate(
             controller.set_alpha(steering_alpha)
             print(f"Steering (vLLM): layer={steering_layer}, alpha={steering_alpha}, "
                   f"mode=all_positions, dir_norm={float(direction.norm(p=2).item()):.3f}")
+    elif backend == "openai":
+        # No local model: generation goes to the OpenAI-compatible endpoint (the
+        # Tinker shim). Templating and sampling happen server-side.
+        if not base_url:
+            raise ValueError(
+                "--backend openai requires --base_url (e.g. http://127.0.0.1:8100/v1)."
+            )
+        if steering_requested:
+            raise ValueError("Steering is not supported with the openai endpoint backend.")
+        model = None
+        tokenizer = None
+        endpoint_model = endpoint_model or base_model or model_path
+        print(
+            f"Using OpenAI-compatible endpoint: {base_url} "
+            f"(model={endpoint_model}, renderer={endpoint_renderer or 'server-default'})"
+        )
     else:
         model, tokenizer = load_model_transformers(
             model_path, base_model, disable_thinking, dtype,
@@ -848,6 +929,20 @@ def evaluate(
                     top_k=top_k,
                     min_p=min_p,
                     seed=seed + start,
+                )
+            elif backend == "openai":
+                responses = generate_openai_batch(
+                    prompts=batch_prompts,
+                    system_prompt=system_prompt,
+                    max_new_tokens=max_new_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                    top_k=top_k,
+                    seed=seed + start,
+                    base_url=base_url,
+                    api_key=api_key,
+                    endpoint_model=endpoint_model,
+                    endpoint_renderer=endpoint_renderer,
                 )
             else:
                 responses = generate_transformers(
@@ -915,22 +1010,55 @@ def evaluate(
 
 # ── CLI ─────────────────────────────────────────────────────────────────────
 
-def main():
+def build_parser() -> argparse.ArgumentParser:
+    """Build the MMLU-Redux argument parser. Shared by the CLI (`main`) and by
+    `run_mmlu_from_config`, so the flow's in-process caller gets the exact same
+    defaults as the command line."""
     parser = argparse.ArgumentParser(
         description="Evaluate a model on MMLU-Redux (Qwen3 tech report protocol: 5-shot generative)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--model_path", required=True,
-        help="HuggingFace model ID or local path (model or adapter)",
+        "--model_path", default=None,
+        help="HuggingFace model ID or local path (model or adapter). Required for "
+             "the transformers/vllm backends; optional for --backend openai "
+             "(the endpoint selects the arm via --endpoint_model).",
     )
     parser.add_argument(
         "--base_model", default=None,
         help="Base model ID when model_path is a PEFT adapter",
     )
     parser.add_argument(
-        "--backend", choices=["transformers", "vllm"], default="transformers",
-        help="Inference backend (default: transformers)",
+        "--backend", choices=["transformers", "vllm", "openai"], default="transformers",
+        help=(
+            "Inference backend (default: transformers). 'openai' talks to an "
+            "OpenAI-compatible endpoint (e.g. the local Tinker shim) via "
+            "--base_url; no GPU is used locally."
+        ),
+    )
+    parser.add_argument(
+        "--base_url", type=str, default=None,
+        help="OpenAI-compatible endpoint base URL (required for --backend openai, e.g. http://127.0.0.1:8100/v1)",
+    )
+    parser.add_argument(
+        "--api_key", type=str, default="EMPTY",
+        help="API key for the OpenAI-compatible endpoint (default: EMPTY; the local shim ignores it)",
+    )
+    parser.add_argument(
+        "--endpoint_model", type=str, default=None,
+        help=(
+            "Model string sent to the OpenAI-compatible endpoint per request (a "
+            "base model name or a tinker://.../sampler_weights/... checkpoint "
+            "path). Defaults to --base_model, then --model_path, when omitted."
+        ),
+    )
+    parser.add_argument(
+        "--endpoint_renderer", type=str, default=None,
+        help=(
+            "Renderer name the shim should use for this run (for MMLU pass a "
+            "disable-thinking renderer, e.g. qwen3_disable_thinking). Omit to use "
+            "the shim's server default."
+        ),
     )
     parser.add_argument(
         "--subjects", nargs="+", default=None,
@@ -1027,14 +1155,23 @@ def main():
         help="How to apply the steering vector (default: last_prompt_and_current)",
     )
 
-    args = parser.parse_args()
+    return parser
 
+
+def run_mmlu_evaluation(args) -> Dict[str, Any]:
+    """Run the MMLU-Redux evaluation for a parsed args namespace and return the
+    results payload (a single run's payload, or a list of them for an alpha
+    sweep). Contains everything the CLI used to do after parsing."""
     if args.batch_size is None:
-        args.batch_size = 64 if args.backend == "vllm" else 8
+        args.batch_size = 64 if args.backend in ("vllm", "openai") else 8
     if args.batch_size < 1:
         raise ValueError("--batch_size must be >= 1")
     if args.save_every_batches < 1:
         raise ValueError("--save_every_batches must be >= 1")
+    if args.backend != "openai" and not args.model_path:
+        raise ValueError("--model_path is required for the transformers/vllm backends.")
+    if args.backend == "openai" and not args.base_url:
+        raise ValueError("--backend openai requires --base_url (e.g. http://127.0.0.1:8100/v1).")
 
     alphas = [float(a.strip()) for a in args.alphas.split(",") if a.strip()]
     if not alphas:
@@ -1051,11 +1188,13 @@ def main():
             "per alpha with separate --output files."
         )
 
+    results_all: List[Dict[str, Any]] = []
     for alpha in alphas:
         if args.output is not None and len(alphas) == 1:
             output_path = args.output
         else:
-            model_short = args.model_path.replace("/", "_").replace("\\", "_")
+            model_ref = args.model_path or args.endpoint_model or args.base_model or "endpoint"
+            model_short = model_ref.replace("/", "_").replace("\\", "_")
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             alpha_tag = f"_alpha{alpha}" if alpha != 0.0 else ""
             output_path = f"mmlu_redux_results_{model_short}{alpha_tag}_{ts}.json"
@@ -1065,33 +1204,62 @@ def main():
             print(f"# Steering alpha = {alpha}")
             print(f"{'#' * 60}")
 
-        evaluate(
-            model_path=args.model_path,
-            base_model=args.base_model,
-            backend=args.backend,
-            subjects=args.subjects,
-            num_shots=args.num_shots,
-            system_prompt=args.system_prompt,
-            max_new_tokens=args.max_new_tokens,
-            disable_thinking=args.disable_thinking,
-            temperature=args.temperature,
-            top_p=args.top_p,
-            top_k=args.top_k,
-            min_p=args.min_p,
-            seed=args.seed,
-            dtype=args.dtype,
-            output_path=output_path,
-            gpu_memory_utilization=args.gpu_memory_utilization,
-            save_responses=not args.no_save_responses,
-            max_eval_examples_per_subject=args.max_eval_examples_per_subject,
-            batch_size=args.batch_size,
-            save_every_batches=args.save_every_batches,
-            resume=args.resume,
-            steering_direction_path=args.steering_direction_path,
-            steering_layer=args.steering_layer,
-            steering_alpha=alpha,
-            steering_apply_mode=args.steering_apply_mode,
+        results_all.append(
+            evaluate(
+                model_path=args.model_path,
+                base_model=args.base_model,
+                backend=args.backend,
+                subjects=args.subjects,
+                num_shots=args.num_shots,
+                system_prompt=args.system_prompt,
+                max_new_tokens=args.max_new_tokens,
+                disable_thinking=args.disable_thinking,
+                temperature=args.temperature,
+                top_p=args.top_p,
+                top_k=args.top_k,
+                min_p=args.min_p,
+                seed=args.seed,
+                dtype=args.dtype,
+                output_path=output_path,
+                gpu_memory_utilization=args.gpu_memory_utilization,
+                save_responses=not args.no_save_responses,
+                max_eval_examples_per_subject=args.max_eval_examples_per_subject,
+                batch_size=args.batch_size,
+                save_every_batches=args.save_every_batches,
+                resume=args.resume,
+                steering_direction_path=args.steering_direction_path,
+                steering_layer=args.steering_layer,
+                steering_alpha=alpha,
+                steering_apply_mode=args.steering_apply_mode,
+                base_url=args.base_url,
+                api_key=args.api_key,
+                endpoint_model=args.endpoint_model,
+                endpoint_renderer=args.endpoint_renderer,
+            )
         )
+
+    return results_all[0] if len(results_all) == 1 else results_all
+
+
+def run_mmlu_from_config(**overrides) -> Dict[str, Any]:
+    """In-process entrypoint: build args with `build_parser` defaults, apply the
+    given overrides, and run. The flow calls this instead of shelling out, so the
+    endpoint and generation params pass as plain Python arguments end to end.
+
+    Keyword names match the CLI flags without the leading dashes (e.g.
+    ``base_url=..., endpoint_model=..., endpoint_renderer=..., subjects=...``)."""
+    parser = build_parser()
+    args = parser.parse_args([])
+    for key, value in overrides.items():
+        if not hasattr(args, key):
+            raise TypeError(f"run_mmlu_from_config got unknown option {key!r}")
+        setattr(args, key, value)
+    return run_mmlu_evaluation(args)
+
+
+def main():
+    args = build_parser().parse_args()
+    run_mmlu_evaluation(args)
 
 
 if __name__ == "__main__":

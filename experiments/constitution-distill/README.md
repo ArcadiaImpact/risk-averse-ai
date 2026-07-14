@@ -19,9 +19,13 @@ effect in each direction.
 ## What's here
 
 - `flow.py` + `configs/*.yaml` — the experiment pipeline (stagehand flow:
-  Tinker reverse-KL distillation → vLLM-safe adapter remap → benchmark evals
-  on ephemeral RunPod pods), consuming the shared library under the repo's
-  `src/`.
+  Tinker reverse-KL distillation → benchmark evals against a local
+  OpenAI-compatible shim backed by Tinker sampling), consuming the shared
+  library under the repo's `src/`. Checkpoint pointers (`tinker://` sampler
+  paths) flow straight from distill to eval; no PEFT conversion, no GPU pods.
+  One shim server serves every arm — each request's `model` selects the arm
+  (base name or checkpoint) and its `renderer` selects thinking-enabled (risk
+  datasets) vs disable-thinking (MMLU).
 - `reports/` — the write-up (+ an earlier smoke-test report) and figures.
 - `results-distill/` — aggregate metrics rows and per-step training-KL logs.
 - `checkpoints.json` — checkpoint pointers + the full training recipe.
@@ -32,8 +36,10 @@ effect in each direction.
 
 ```bash
 git clone https://github.com/ArcadiaImpact/risk-averse-ai && cd risk-averse-ai
-uv sync   # the benchmark eval is committed in-tree (src/eval, MIT/CC-BY-4.0)
-export TINKER_API_KEY=... RUNPOD_API_KEY=... HF_TOKEN=...
+# the benchmark eval is committed in-tree (src/eval, MIT/CC-BY-4.0); the serve
+# extra provides the Tinker-backed shim the flow starts for evaluation.
+uv sync --extra train --extra serve
+export TINKER_API_KEY=... HF_TOKEN=...
 uv run python -u experiments/constitution-distill/flow.py --config configs/config.distill.yaml
 ```
 

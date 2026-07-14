@@ -1,0 +1,41 @@
+# Functional smoke for the NEW eval instrument (no distill, no GPU pods):
+# base arm × medium_stakes_validation at 20 situations, paper-facing generation
+# settings, driven through the local Tinker-backed shim. Proves the endpoint
+# path runs end to end and emits cooperate_rate + parse_rate. Results land in
+# runs/eval-smoke/ (gitignored). Paths are repo-root-relative.
+benchmark:
+  repo: https://github.com/riskaverseAIs/riskaverseAIs
+  commit: 79f2da1a838db00d5704aeaecd4d6b3fd1110967
+  eval_dir: src/eval
+
+student_model: Qwen/Qwen3-8B
+
+arms:
+  - name: base            # untrained student; no checkpoint, so no distill
+    constitution: null
+
+distill:
+  prompts: risk_seeds
+  out_root: experiments/constitution-distill/runs/distill-eval-smoke
+
+eval:
+  host: 127.0.0.1
+  port: 8100
+  renderers:
+    think: qwen3
+    no_think: qwen3_disable_thinking
+  datasets:
+    - medium_stakes_validation
+  num_situations: 20
+  seed: 12345
+  temperature: 0.6
+  top_p: 0.95
+  top_k: 20
+  batch_size: 4
+  max_new_tokens: 4096
+  reasoning_max_tokens: 800
+  mmlu: false
+
+results:
+  dir: experiments/constitution-distill/runs/eval-smoke
+  gcs: <your-artifact-bucket>/eval-smoke/
