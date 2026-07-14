@@ -36,47 +36,48 @@ from stagehand import Flow, live_dashboard, serve
 
 EXP_DIR = Path(__file__).resolve().parent          # experiments/constitution-distill/
 REPO_ROOT = Path(__file__).resolve().parents[2]     # repo root (library + src/)
-# Make src/ importable so `from constitution import ...` / `from train import ...`
-# resolve to the repo-root library (kept localized here rather than packaging src).
+# Make src/ importable so `from constitution import ...` resolves to the
+# repo-root library (kept localized here rather than packaging src).
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-# Vendored reverse-KL distillation (src/train, from aligne). Stdlib-only at
-# module level — importing this here does NOT pull in tinker/torch (those
-# imports are lazy inside run_reverse_kl), so `flow.py --help` works without
-# the `train` extra installed.
-from train import ReverseKLDistillConfig  # noqa: E402
+# Reverse-KL distillation from aligne (pinned dep aligne.train.tinker; see
+# pyproject). aligne's train package imports tinker/torch LAZILY, so importing
+# these config/result types here does NOT pull in the heavy runtime — `flow.py
+# --help` works without the `train` extra installed.
+from aligne.train.tinker import ReverseKLDistillConfig, TrainResult  # noqa: E402
 
 
-def _distill_worker(cfg: ReverseKLDistillConfig) -> str:
+def _distill_worker(cfg: ReverseKLDistillConfig) -> TrainResult:
     """Run one arm's reverse-KL distill in a FRESH child process (spawn target).
 
     Module-level (not a closure) so `spawn` can pickle it by reference. The
-    heavy `run_reverse_kl` import happens HERE, inside the child, so the parent
+    heavy `run_reverse_kl` call happens HERE, inside the child, so the parent
     event-loop process never imports tinker/torch. `run_reverse_kl` is async, so
-    we drive it with `asyncio.run(...)` inside the child; it returns the run's
-    out dir (a picklable str). The durable artifacts
-    (`checkpoints.jsonl`/`metrics.jsonl`) are read off disk by the caller, never
-    from stdout.
+    we drive it with `asyncio.run(...)` inside the child; it returns a
+    `TrainResult` (a picklable frozen dataclass) carrying the final
+    `sampler_path`, `state_path`, and `final_metrics` — read from the run's
+    on-disk artifacts by aligne, never from stdout.
     """
     import asyncio
 
-    sys.path.insert(0, str(REPO_ROOT / "src"))
-    from train import run_reverse_kl
+    from aligne.train.tinker.distill import run_reverse_kl
 
     return asyncio.run(run_reverse_kl(cfg))
 
 
-def _run_distill_isolated(cfg: ReverseKLDistillConfig) -> str:
+def _run_distill_isolated(cfg: ReverseKLDistillConfig) -> TrainResult:
     """Run `_distill_worker(cfg)` in a fresh spawned process, one task per child.
 
-    ONE FRESH CHILD PER ARM: the prompted-teacher KL primitive patches a
-    process-global cookbook attribute (train_on_policy.incorporate_kl_penalty)
-    for the duration of a run. The flow runs arms CONCURRENTLY, and concurrent
-    runs sharing one process would race on that shared attribute (arm B could
-    score its rollouts under arm A's teacher mid-run). A fresh spawn context + a
-    single-worker pool with max_tasks_per_child=1 gives each arm its own
-    interpreter, so the patch never leaks across arms. (Blocking join runs under
-    asyncio.to_thread at the call site, so the event loop stays free.)
+    ONE FRESH CHILD PER ARM: aligne's prompted-teacher KL primitive is scoped
+    (a `prompted_teacher_kl` context manager inside the driver restores the
+    cookbook's original `incorporate_kl_penalty` on exit), but WHILE a run is
+    live the patch is still process-global. The flow runs arms CONCURRENTLY, so
+    concurrent runs sharing one process would race on that shared attribute
+    (arm B could score its rollouts under arm A's teacher mid-run). A fresh
+    spawn context + a single-worker pool with max_tasks_per_child=1 gives each
+    arm its own interpreter, so live patches never overlap across arms.
+    (Blocking join runs under asyncio.to_thread at the call site, so the event
+    loop stays free.)
     """
     ctx = mp.get_context("spawn")
     with ProcessPoolExecutor(max_workers=1, mp_context=ctx, max_tasks_per_child=1) as ex:
@@ -237,14 +238,15 @@ def main() -> None:
             },
         )
         # Each arm trains in its own spawned process — the prompted-teacher KL
-        # patch is process-global (see _run_distill_isolated). to_thread keeps
-        # the flow's event loop responsive while the child trains.
-        await asyncio.to_thread(_run_distill_isolated, rk_cfg)
-        # Read the artifacts contract off disk (never stdout): the child writes
-        # <out>/checkpoints.jsonl and <out>/metrics.jsonl.
-        rows = [json.loads(l) for l in (out / "checkpoints.jsonl").read_text().splitlines()]
-        final = next(r for r in reversed(rows) if r.get("sampler_path"))
-        # Convergence log (prediction ii): persist the teacher_kl trajectory.
+        # patch is scoped inside the driver but still process-global while the
+        # run is live (see _run_distill_isolated). to_thread keeps the flow's
+        # event loop responsive while the child trains. The child returns a
+        # TrainResult (final sampler_path / final_metrics) read by aligne from
+        # the run's artifacts — no stdout / checkpoints.jsonl parsing here.
+        result = await asyncio.to_thread(_run_distill_isolated, rk_cfg)
+        # Convergence log (prediction ii): persist the full per-step teacher_kl
+        # trajectory from the run's durable <out>/metrics.jsonl (TrainResult
+        # carries only the final value per metric key, not the per-step history).
         kl = [
             {"step": m.get("step"), "teacher_kl": m["teacher_kl"]}
             for m in (json.loads(l) for l in (out / "metrics.jsonl").read_text().splitlines())
@@ -255,8 +257,8 @@ def main() -> None:
         )
         return {
             "arm": arm["name"],
-            "checkpoint": final["sampler_path"],
-            "final_teacher_kl": kl[-1]["teacher_kl"] if kl else None,
+            "checkpoint": result.sampler_path,
+            "final_teacher_kl": result.final_metrics.get("teacher_kl"),
         }
 
     async def remap(t: dict) -> dict:

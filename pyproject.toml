@@ -9,19 +9,21 @@ dependencies = [
     "bellhop-py",
     "marquee-serve",
     "databrowser",
+    # Reverse-KL character distillation driver (aligne.train.tinker), pinned to
+    # a release tag. aligne's core install is light (httpx/numpy/scipy) and its
+    # train drivers import tinker/torch LAZILY, so `import aligne.train.tinker`
+    # (and `flow.py --help`) work without the heavy `train` extra below.
+    "aligne",
 ]
 
 [project.optional-dependencies]
-# Reverse-KL character distillation on Tinker (src/train, vendored from aligne).
-# Bare names + PyPI source, matching aligne's own `tinker` extra. Only needed to
-# actually RUN a distill (flow.py's distill step); `import train` and every
-# gate command work without it because the vendored modules are stdlib-only at
-# module level (heavy imports are lazy). tinker requires Python <3.14 (see
-# CLAUDE.md), so the extra is marked accordingly to keep the base project on
-# >=3.11 without pinning it down; install it under a 3.12 venv.
+# Actually RUNNING a distill (flow.py's distill step) needs aligne's Tinker
+# runtime — tinker/tinker-cookbook/torch — which aligne exposes as its own
+# `tinker` extra. tinker requires Python <3.14 (see CLAUDE.md), so the marker
+# keeps the base project on >=3.11 without pinning it down; install under a
+# 3.12 venv (`uv sync --extra train`).
 train = [
-    "tinker; python_version < '3.14'",
-    "tinker-cookbook; python_version < '3.14'",
+    "aligne[tinker]; python_version < '3.14'",
 ]
 
 [tool.uv]
@@ -32,3 +34,4 @@ stagehand = { git = "https://github.com/dtch1997/stagehand" }
 bellhop-py = { git = "https://github.com/dtch1997/bellhop" }
 marquee-serve = { git = "https://github.com/dtch1997/marquee" }
 databrowser = { git = "https://github.com/dtch1997/databrowser" }
+aligne = { git = "https://github.com/ArcadiaImpact/aligne.git", tag = "v0.2.0" }
