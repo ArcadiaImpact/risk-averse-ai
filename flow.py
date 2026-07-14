@@ -26,6 +26,26 @@ from stagehand import Flow, live_dashboard, serve
 
 ROOT = Path(__file__).resolve().parent
 
+
+def render_block(constitution: str, model: str) -> str:
+    """Render the eval-time constitution system block, in-process.
+
+    Distill-v1's prompted arms were contaminated by capturing this block from
+    the *stdout* of a `uv run python -c "print(...)"` subprocess: uv's
+    VIRTUAL_ENV warning once rode along into the prompt used on the benchmark
+    (see reports/2026-07-10-distill-v1.md). Experimental data must never
+    transit stdout, so we render directly via the vendored constitution module
+    (constitution.py, a byte-for-byte copy of aligne's stdlib-only renderer) —
+    no subprocess, and no aligne dependency.
+    """
+    from constitution import load_constitution, system_block
+
+    con = load_constitution(str(ROOT / "constitutions" / f"{constitution}.json"))
+    block = system_block(model, con)
+    if not block.startswith("The assistant is"):
+        raise RuntimeError(f"render_block produced unexpected prefix: {block[:120]!r}")
+    return block
+
 # Reference environment from the benchmark README, minus the numpy pin:
 # vllm==0.17.1 forces opencv>=4.13 which forces numpy>=2, so the README's
 # numpy==1.26.4 is unsatisfiable today (resolves to numpy 2.2.x instead).
@@ -100,26 +120,6 @@ def main() -> None:
         raise SystemExit("vendor/riskaverseAIs/evaluation missing — broken checkout? It is committed in-tree.")
 
     # ---- step fns --------------------------------------------------------- #
-    async def render_block(constitution: str) -> str:
-        # stdout ONLY — run_cmd merges stderr, and uv's VIRTUAL_ENV warning
-        # once rode along into the eval-time system prompt (distill-v1
-        # prompted arms; see reports). Keep the render channel clean.
-        proc = await asyncio.create_subprocess_exec(
-            "uv", "run", "--no-sync", "python", "-c",
-            "from aligne.character import constitution as C; "
-            f"print(C.system_block({student!r}, C.load_constitution({constitution!r})))",
-            cwd=str(aligne),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        out, err = await proc.communicate()
-        if proc.returncode != 0:
-            raise RuntimeError(f"render_block({constitution!r}) failed:\n{err.decode()[-2000:]}")
-        block = out.decode().strip()
-        if not block.startswith("The assistant is"):
-            raise RuntimeError(f"render_block produced unexpected prefix: {block[:120]!r}")
-        return block
-
     def build_train_prompts(n_rows: int) -> Path:
         """Repeat-shuffle the seed prompts to n_rows. The dataset is
         single-epoch (num_batches = rows / groups_per_batch), so row count is
@@ -149,7 +149,7 @@ def main() -> None:
             return {
                 "arm": arm["name"],
                 "checkpoint": None,
-                "system_prompt": await render_block(arm["constitution"]),
+                "system_prompt": render_block(arm["constitution"], student),
             }
         out = (ROOT / cfg["distill"]["out_root"] / arm["name"]).resolve()
         steps = cfg["distill"].get("max_steps") or 100
