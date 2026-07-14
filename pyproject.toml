@@ -5,6 +5,9 @@ description = "Constitutional character training as a method arm on the riskaver
 requires-python = ">=3.11"
 dependencies = [
     "pyyaml>=6",
+    # src/eval/evaluate.py and src/train/riskaverse_datasets.py load the
+    # benchmark CSVs with pandas; both run in-process in the flow.
+    "pandas>=2",
     "stagehand",
     "bellhop-py",
     "marquee-serve",
@@ -24,6 +27,19 @@ dependencies = [
 # 3.12 venv (`uv sync --extra train`).
 train = [
     "aligne[tinker]; python_version < '3.14'",
+]
+# Local OpenAI-compatible shim over Tinker sampling (src/serving, vendored from
+# aligne). Serves the eval endpoint: evals talk to it instead of a GPU pod.
+# Reuses the `train` extra's tinker/tinker-cookbook (same <3.14 pin) and adds
+# the FastAPI/uvicorn server stack + the OpenAI client the eval endpoint backend
+# uses. Only needed to actually SERVE or RUN an endpoint eval; `import serving`
+# works without it (heavy imports are lazy).
+serve = [
+    "tinker; python_version < '3.14'",
+    "tinker-cookbook; python_version < '3.14'",
+    "fastapi",
+    "uvicorn",
+    "openai",
 ]
 
 [tool.uv]

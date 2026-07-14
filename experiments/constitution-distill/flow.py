@@ -1,37 +1,45 @@
-"""Distill → remap → eval flow for the risk-averse-AI constitutional case study.
+"""Distill → eval flow for the risk-averse-AI constitutional case study.
 
 Arms (base / risk_averse / risk_seeking) are trained with aligne's reverse-KL
-character distillation on Tinker, remapped to vLLM-safe HF PEFT adapters, and
-evaluated on the riskaverseAIs benchmark on ephemeral RunPod pods (bellhop).
+character distillation on Tinker, then evaluated on the riskaverseAIs benchmark
+against a local OpenAI-compatible shim backed directly by Tinker sampling — no
+GPU pods, no PEFT conversion. One shim server serves every arm: each eval
+request's ``model`` selects the arm (the base model name, or the arm's
+``tinker://.../sampler_weights/...`` checkpoint path), and its ``renderer``
+selects thinking-enabled (risk datasets) vs disable-thinking (MMLU).
 
     uv run python experiments/constitution-distill/flow.py            # configs/config.yaml
     uv run python experiments/constitution-distill/flow.py --config configs/config.smoke.yaml
 
-Requires ~/.env with TINKER_API_KEY, RUNPOD_API_KEY, HF_TOKEN (auto-loaded),
-The benchmark evaluation is committed in-tree under src/eval.
+Requires ~/.env with TINKER_API_KEY, HF_TOKEN (auto-loaded). The benchmark
+evaluation is committed in-tree under src/eval and called in-process (no
+subprocesses): the flow starts the shim as a child process and drives
+``evaluate.run_evaluation_from_config`` for each arm × dataset.
 
 Path convention: this flow lives at experiments/<slug>/flow.py and consumes the
 library at the repo root. Config VALUES that point into the shared library
-(``benchmark.eval_dir``, ``aligne_dir``) and the flow's own outputs
-(``results.dir``, ``distill.out_root``, ``remap.out_root``) are ALL resolved
-relative to REPO_ROOT — one anchor for every config path. The ``--config`` path
-and the flow's ``runs/`` scratch are relative to this experiment dir (EXP_DIR).
+(``benchmark.eval_dir``) and the flow's own outputs (``results.dir``,
+``distill.out_root``) are ALL resolved relative to REPO_ROOT — one anchor for
+every config path. The ``--config`` path and the flow's ``runs/`` scratch are
+relative to this experiment dir (EXP_DIR).
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import multiprocessing as mp
 import os
-import shlex
+import subprocess
 import sys
+import time
+import urllib.error
+import urllib.request
 from concurrent.futures import ProcessPoolExecutor
-from datetime import timedelta
 from pathlib import Path
 
 import yaml
-from bellhop import Pod, PodConfig, pod
 from stagehand import Flow, live_dashboard, serve
 
 EXP_DIR = Path(__file__).resolve().parent          # experiments/constitution-distill/
@@ -104,14 +112,6 @@ def render_block(constitution: str, model: str) -> str:
         raise RuntimeError(f"render_block produced unexpected prefix: {block[:120]!r}")
     return block
 
-# Reference environment from the benchmark README, minus the numpy pin:
-# vllm==0.17.1 forces opencv>=4.13 which forces numpy>=2, so the README's
-# numpy==1.26.4 is unsatisfiable today (resolves to numpy 2.2.x instead).
-BENCH_PINS = (
-    "pandas==2.2.3 scipy==1.13.1 "
-    "transformers==4.57.6 accelerate==1.13.0 peft==0.18.1 vllm==0.17.1"
-)
-
 
 def load_env(path: Path = Path.home() / ".env") -> None:
     """Load KEY=VALUE lines into os.environ (existing vars win)."""
@@ -125,37 +125,45 @@ def load_env(path: Path = Path.home() / ".env") -> None:
         os.environ.setdefault(k.strip(), v.strip().strip('"'))
 
 
-async def run_cmd(cmd: list[str], cwd: Path) -> str:
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        cwd=str(cwd),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
+@contextlib.contextmanager
+def shim_server(*, host: str, port: int, renderer: str, ready_timeout: float = 120.0):
+    """Start the Tinker-backed OpenAI-compatible shim as a child process.
+
+    Yields the base_url (``http://host:port/v1``) once ``/health`` answers, and
+    tears the process down on exit. ONE server serves every arm: the arm is
+    chosen per request by the ``model`` field (base name or checkpoint path),
+    and thinking vs disable-thinking by the per-request ``renderer`` field, so
+    ``renderer`` here is only the server default.
+    """
+    env = {**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")}
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "serving.tinker_shim",
+         "--host", host, "--port", str(port), "--renderer", renderer],
+        env=env,
     )
-    out, _ = await proc.communicate()
-    text = out.decode(errors="replace")
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"{' '.join(map(shlex.quote, cmd))} failed (exit {proc.returncode}):\n{text[-3000:]}"
-        )
-    return text
-
-
-def find_metrics(obj):
-    """Depth-first search for the benchmark's summary-metrics dict."""
-    if isinstance(obj, dict):
-        if "cooperate_rate" in obj:
-            return obj
-        for v in obj.values():
-            m = find_metrics(v)
-            if m is not None:
-                return m
-    elif isinstance(obj, list):
-        for v in obj:
-            m = find_metrics(v)
-            if m is not None:
-                return m
-    return None
+    health = f"http://{host}:{port}/health"
+    try:
+        deadline = time.time() + ready_timeout
+        while True:
+            if proc.poll() is not None:
+                raise RuntimeError(f"shim exited during startup (code {proc.returncode})")
+            try:
+                with urllib.request.urlopen(health, timeout=2) as r:
+                    if r.status == 200:
+                        break
+            except (urllib.error.URLError, ConnectionError, OSError):
+                pass
+            if time.time() > deadline:
+                raise RuntimeError(f"shim not ready after {ready_timeout}s at {health}")
+            time.sleep(0.5)
+        print(f"[shim] ready at http://{host}:{port}/v1 (default renderer={renderer})")
+        yield f"http://{host}:{port}/v1"
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
 
 
 def main() -> None:
@@ -168,7 +176,6 @@ def main() -> None:
     cfg = yaml.safe_load((EXP_DIR / args.config).read_text())
     load_env()
 
-    aligne = (REPO_ROOT / cfg["aligne_dir"]).resolve()
     eval_dir = REPO_ROOT / cfg["benchmark"]["eval_dir"]
     student = cfg["student_model"]
     ev = cfg["eval"]
@@ -177,6 +184,18 @@ def main() -> None:
 
     if not (eval_dir / "evaluate.py").exists():
         raise SystemExit("src/eval/evaluate.py missing — broken checkout? The evaluation is committed in-tree.")
+
+    # The committed benchmark eval imports its siblings by bare name (e.g.
+    # `from answer_parser import ...`), so put its dir on sys.path and import the
+    # module directly. Imported here (after arg parsing) so `flow.py --help`
+    # never pulls in torch/pandas.
+    sys.path.insert(0, str(eval_dir))
+    from evaluate import run_evaluation_from_config
+
+    renderers = ev.get("renderers", {})
+    think_renderer = renderers.get("think", "qwen3")
+    no_think_renderer = renderers.get("no_think", "qwen3_disable_thinking")
+    endpoint = {"base_url": None}  # filled in once the shim is up
 
     # ---- step fns --------------------------------------------------------- #
     def build_train_prompts(n_rows: int) -> Path:
@@ -187,7 +206,7 @@ def main() -> None:
         import random
 
         # Seed set is a constitution-adjacent asset under src/constitution/prompts;
-        # the distill step reads it directly, not from aligne_dir (remap uses aligne).
+        # the distill step reads it directly.
         src = REPO_ROOT / "src/constitution/prompts" / f"{cfg['distill']['prompts']}.jsonl"
         seeds = [l for l in src.read_text().splitlines() if l.strip()]
         rng = random.Random(12345)
@@ -217,8 +236,7 @@ def main() -> None:
         gpb = cfg["distill"].get("groups_per_batch", 32)
         prompts_path = build_train_prompts(steps * gpb)
         # Reverse-KL from a constitution-PROMPTED base teacher. The constitution
-        # is rendered in-process to the teacher's eliciting system block (the
-        # `system_block(model, con)` the aligne CLI feeds to `--sys`), and the
+        # is rendered in-process to the teacher's eliciting system block, and the
         # teacher is the same base model as the student (never a checkpoint).
         # Every knob comes from the config's `distill:` section (config-first,
         # no preset modes); a smoke run is config.smoke.yaml with tiny values.
@@ -261,132 +279,94 @@ def main() -> None:
             "final_teacher_kl": result.final_metrics.get("teacher_kl"),
         }
 
-    async def remap(t: dict) -> dict:
-        if not t["checkpoint"]:
-            return {**t, "adapter": None}
-        out = (REPO_ROOT / cfg["remap"]["out_root"] / t["arm"]).resolve()
-        # aligne-ema over a single checkpoint is a plain download + PEFT
-        # conversion; --vllm-safe strips the lm_head/embed LoRA tensors that
-        # vLLM refuses to serve (Tinker trains all-linear).
-        # Tinker builds the checkpoint archive lazily on first request and the
-        # SDK's request timeout is shorter than the build — retry until the
-        # cached archive is ready.
-        # Fresh archives can take >10 min to build server-side — be patient.
-        last: Exception | None = None
-        for attempt in range(10):
-            import shutil
-
-            # Clean BOTH dirs: tinker_cookbook refuses existing output paths,
-            # and a stale _work/peft_0 from a failed attempt poisons retries.
-            for stale in (out, Path(str(out) + "_work")):
-                if stale.exists():
-                    shutil.rmtree(stale)
-            try:
-                await run_cmd(
-                    [
-                        "uv", "run", "--no-sync", "aligne-ema",
-                        "--checkpoints", t["checkpoint"],
-                        "--base-model", student,
-                        "--out", str(out),
-                        # keep the raw-checkpoint scratch out of the adapter
-                        # dir — the whole dir gets pushed to the eval pod
-                        "--work-dir", str(out) + "_work",
-                        "--vllm-safe",
-                    ],
-                    cwd=aligne,
-                )
-                return {**t, "adapter": str(out)}
-            except RuntimeError as e:
-                last = e
-                await asyncio.sleep(90)
-        raise RuntimeError(f"remap {t['arm']} failed after retries: {last}")
-
     async def eval_arm(t: dict) -> list[dict]:
+        """Evaluate one arm across every dataset via the local shim endpoint.
+
+        The arm's checkpoint (a tinker:// sampler path) or the base model name is
+        sent as the endpoint ``model``; prompted arms carry a ``system_prompt``.
+        Each dataset eval runs in a worker thread (``to_thread``) so arms — mapped
+        concurrently by the flow — overlap; the eval itself is API-bound.
+        """
         arm = t["arm"]
         arm_out = results_dir / arm
         arm_out.mkdir(parents=True, exist_ok=True)
-        pcfg = PodConfig(
-            gpu=cfg["pod"]["gpu"],
-            image=cfg["pod"]["image"],
-            env={"HF_TOKEN": os.environ.get("HF_TOKEN", "")},
-            container_disk_gb=cfg["pod"].get("container_disk_gb", 80),
-            max_lifetime=timedelta(minutes=cfg["pod"]["ttl_minutes"]),
-        )
-        gen_flags = (
-            f"--temperature {ev['temperature']} --top_p {ev['top_p']} "
-            f"--top_k {ev['top_k']} --seed {ev['seed']} "
-            f"--batch_size {ev['batch_size']} "
-            f"--max_new_tokens {ev['max_new_tokens']} "
-            f"--reasoning_max_tokens {ev['reasoning_max_tokens']}"
-        )
-        async with pod(pcfg) as p:
-            # push src/eval to the pod's /workspace/evaluation (remote path
-            # unchanged so pod-side evaluate.py commands stay the same).
-            await p.push(str(eval_dir), "/workspace/evaluation")
-            model_flag = ""
-            if t["adapter"]:
-                await p.push(t["adapter"], "/workspace/adapter")
-                model_flag = "--model_path /workspace/adapter "
-            sys_flag = ""
-            if t.get("system_prompt"):
-                await _exec(
-                    p,
-                    "cat > /workspace/sysprompt.txt <<'SYSEOF'\n"
-                    + t["system_prompt"]
-                    + "\nSYSEOF",
-                    what=f"{arm}/sysprompt",
-                )
-                sys_flag = '--system_prompt "$(cat /workspace/sysprompt.txt)" '
-            # Fresh venv: the image's preinstalled packages make the
-            # benchmark's pinned combo unresolvable; the README's reference
-            # env assumes a clean environment.
-            py = "/workspace/venv/bin/python"
-            await _exec(
-                p,
-                "python -m venv /workspace/venv && "
-                f"{py} -m pip install -q -U pip setuptools wheel",
-                what=f"{arm}/venv", timeout=900,
-            )
-            await _exec(p, f"{py} -m pip install -q {BENCH_PINS}", what=f"{arm}/pip", timeout=2400)
-            await _exec(p, "mkdir -p /workspace/evaluation/out", what=f"{arm}/mkdir")
-            for ds in ev["datasets"]:
-                await _exec(
-                    p,
-                    f"cd /workspace/evaluation && {py} evaluate.py "
-                    f"--base_model {student} {model_flag}{sys_flag}--dataset {ds} "
-                    f"--num_situations {ev['num_situations']} --backend vllm "
-                    f"{gen_flags} --output out/{ds}.json",
-                    what=f"{arm}/{ds}", timeout=cfg["pod"].get("exec_timeout_s", 5400),
-                )
-            if ev.get("mmlu"):
-                await _exec(
-                    p,
-                    f"cd /workspace/evaluation && {py} evaluate_mmlu_redux.py "
-                    f"--base_model {student} {model_flag}--backend vllm "  # MMLU: no persona prompt
-                    f"--disable_thinking --temperature 0.0 --top_p 1.0 "
-                    f"--top_k -1 --min_p 0.0 --output out/mmlu_redux.json",
-                    what=f"{arm}/mmlu", timeout=cfg["pod"].get("exec_timeout_s", 5400),
-                )
-            await p.pull("/workspace/evaluation/out", str(arm_out))
+        endpoint_model = t.get("checkpoint") or student
+        system_prompt = t.get("system_prompt")
+
         rows = []
-        for f in sorted((arm_out / "out").glob("*.json")):
-            metrics = find_metrics(json.loads(f.read_text())) or {}
+        for ds in ev["datasets"]:
+            out_path = arm_out / f"{ds}.json"
+            # Fresh write each run: run_single_alpha_eval refuses an existing
+            # output path unless --resume.
+            if out_path.exists():
+                out_path.unlink()
+            summary = await asyncio.to_thread(
+                run_evaluation_from_config,
+                backend="openai",
+                base_url=endpoint["base_url"],
+                api_key="EMPTY",
+                endpoint_model=endpoint_model,
+                endpoint_renderer=think_renderer,
+                base_model=student,
+                dataset=ds,
+                num_situations=ev["num_situations"],
+                temperature=ev["temperature"],
+                top_p=ev["top_p"],
+                top_k=ev["top_k"],
+                seed=ev["seed"],
+                batch_size=ev["batch_size"],
+                max_new_tokens=ev["max_new_tokens"],
+                reasoning_max_tokens=ev["reasoning_max_tokens"],
+                system_prompt=system_prompt,
+                output=str(out_path),
+            )
+            metrics = summary.get("metrics") or {}
+            num_total = summary.get("num_total") or 0
+            num_parse_failed = summary.get("num_parse_failed") or 0
+            parse_rate = (num_total - num_parse_failed) / num_total if num_total else None
             rows.append(
                 {
                     "arm": arm,
-                    "dataset": f.stem,
+                    "dataset": ds,
+                    **{k: v for k, v in metrics.items() if isinstance(v, (int, float, type(None)))},
+                    "parse_rate": parse_rate,
+                    "num_total": num_total,
+                    "num_parse_failed": num_parse_failed,
+                    "final_teacher_kl": t.get("final_teacher_kl"),
+                }
+            )
+        # MMLU is a separate script (thinking disabled); the flow drives it via
+        # the same endpoint with the disable-thinking renderer.
+        if ev.get("mmlu"):
+            from evaluate_mmlu_redux import run_mmlu_from_config
+
+            out_path = arm_out / "mmlu_redux.json"
+            if out_path.exists():
+                out_path.unlink()
+            summary = await asyncio.to_thread(
+                run_mmlu_from_config,
+                backend="openai",
+                base_url=endpoint["base_url"],
+                api_key="EMPTY",
+                endpoint_model=endpoint_model,
+                endpoint_renderer=no_think_renderer,
+                base_model=student,
+                disable_thinking=True,
+                temperature=0.0,
+                top_p=1.0,
+                top_k=-1,
+                output=str(out_path),
+            )
+            metrics = (summary.get("metrics") if isinstance(summary, dict) else None) or {}
+            rows.append(
+                {
+                    "arm": arm,
+                    "dataset": "mmlu_redux",
                     **{k: v for k, v in metrics.items() if isinstance(v, (int, float, type(None)))},
                     "final_teacher_kl": t.get("final_teacher_kl"),
                 }
             )
         return rows
-
-    async def _exec(p: Pod, cmd: str, *, what: str, timeout: float = 600) -> None:
-        # Client-side timeout is mandatory: without it a pod that dies mid-exec
-        # hangs the arm indefinitely.
-        r = await p.exec(cmd, timeout=timeout)
-        if r.exit_code != 0:
-            raise RuntimeError(f"[{what}] exit {r.exit_code}:\n{r.stderr[-2000:]}\n{r.stdout[-2000:]}")
 
     def aggregate(all_rows: list) -> str:
         skipped = [r for r in all_rows if not isinstance(r, list)]
@@ -404,21 +384,8 @@ def main() -> None:
                 # store could replay smoke-scale results into a full run.
                 memo=str(EXP_DIR / "runs" / f"memo-{Path(args.config).stem}"))
     trained = flow.map("distill", cfg["arms"], distill)
-    adapters = flow.map("remap", trained, remap)
-    # RunPod provisioning throws transient errors (GraphQL 500s, PodNotReady).
-    # Manual retry: stagehand's with_retry returns the last exception AS the
-    # result when attempts are exhausted, which silently poisons downstream.
-    async def eval_arm_retrying(t: dict) -> list[dict]:
-        last: Exception | None = None
-        for attempt in range(3):
-            try:
-                return await eval_arm(t)
-            except Exception as e:
-                last = e
-                await asyncio.sleep(120 * (attempt + 1))
-        raise RuntimeError(f"eval {t['arm']} failed after 3 pods: {last}")
-
-    evals = flow.map("eval", adapters, eval_arm_retrying)
+    # Checkpoint pointers flow straight from distill to eval — no remap step.
+    evals = flow.map("eval", trained, eval_arm)
     final = flow.reduce("results", evals, aggregate)
 
     async def _run() -> None:
@@ -438,7 +405,16 @@ def main() -> None:
         if final.result:
             print(f"results → {final.result}")
 
-    asyncio.run(_run())
+    # ONE shim serves the whole run; it stays up for the entire flow and is torn
+    # down on exit. Eval is API-bound, so a single local (GPU-free) server backed
+    # by Tinker sampling handles every arm × dataset.
+    with shim_server(
+        host=ev.get("host", "127.0.0.1"),
+        port=ev.get("port", 8100),
+        renderer=think_renderer,
+    ) as base_url:
+        endpoint["base_url"] = base_url
+        asyncio.run(_run())
 
 
 if __name__ == "__main__":

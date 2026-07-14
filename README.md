@@ -23,8 +23,11 @@ prompted-teacher effect in each direction. Full write-up in the study's
     (reference-only).
   - `src/constitution/` — flat-trait constitution renderer (a subset vendored
     from aligne) + the constitution JSONs and prompt sets.
-- Reverse-KL character distillation on Tinker comes from **aligne**
-  (`aligne.train.tinker`), a pinned dependency — no longer vendored.
+  - `src/serving/` — a local OpenAI-compatible shim over Tinker sampling
+    (an aligne subset extended for the benchmark's sampling params); evals
+    talk to it instead of a GPU pod.
+- Character-training drivers on Tinker come from **aligne**
+  (`aligne.train.tinker`), a pinned dependency.
 - `experiments/<slug>/` — one directory per study: `flow.py`, `configs/`,
   `reports/`, `results*/`, `checkpoints.json`, study scripts.
 - `scripts/` — repo-level checks that exercise `src/`
@@ -34,11 +37,13 @@ prompted-teacher effect in each direction. Full write-up in the study's
 
 The constitution renderer is vendored under `src/constitution/` with a pinned
 provenance header (`scripts/render_parity.py` checks it stays output-identical
-to aligne's). The reverse-KL distillation driver is **not** vendored: it comes
-from **aligne** (our character-training library) pinned to a release tag
-(`aligne.train.tinker`, see `pyproject.toml`). Training runs on
+to aligne's). Training drivers come from **aligne** (our character-training
+library) pinned to a release tag (`aligne.train.tinker`, see
+`pyproject.toml`). Training runs on
 [Tinker](https://thinkingmachines.ai/tinker/) (`uv sync --extra train` pulls
-`aligne[tinker]`); evaluation code and datasets are committed in-tree.
+`aligne[tinker]`); evaluation code and datasets are committed in-tree and run
+against a local OpenAI-compatible shim backed by Tinker sampling
+(`uv sync --extra serve`) — GPU pods are not used.
 
 ## Status
 

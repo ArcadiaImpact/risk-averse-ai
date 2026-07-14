@@ -2,11 +2,10 @@
 #   uv run python experiments/constitution-distill/flow.py --config configs/config.smoke.yaml
 #
 # All paths below are resolved relative to the REPO ROOT (see flow.py's path
-# convention): library paths (eval_dir, aligne_dir) point at the shared src/
-# and a sibling aligne checkout; outputs (results.dir, *out_root) live under
-# this experiment dir, experiments/constitution-distill/.
+# convention): the library path (eval_dir) points at the shared src/; outputs
+# (results.dir, *out_root) live under this experiment dir,
+# experiments/constitution-distill/.
 
-aligne_dir: ../aligne
 benchmark:
   repo: https://github.com/riskaverseAIs/riskaverseAIs
   commit: 79f2da1a838db00d5704aeaecd4d6b3fd1110967
@@ -40,10 +39,14 @@ distill:
   max_steps: null         # null = recipe default; set explicitly to train to convergence
   out_root: experiments/constitution-distill/runs/distill
 
-remap:
-  out_root: experiments/constitution-distill/runs/adapters
-
 eval:
+  # Evals run against a local OpenAI-compatible shim backed by Tinker sampling
+  # (src/serving); the flow starts it as a child process. No GPU pods.
+  host: 127.0.0.1
+  port: 8100
+  renderers:
+    think: qwen3                     # thinking enabled — risk datasets
+    no_think: qwen3_disable_thinking # thinking disabled — MMLU
   datasets:
     - medium_stakes_validation
     - high_stakes_test
@@ -62,12 +65,6 @@ eval:
   max_new_tokens: 4096
   reasoning_max_tokens: 800
   mmlu: true
-
-pod:
-  gpu: A100            # bellhop alias, expands to all A100 gpuTypeIds
-  image: runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04
-  container_disk_gb: 80
-  ttl_minutes: 240
 
 results:
   dir: experiments/constitution-distill/results
