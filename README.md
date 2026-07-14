@@ -16,6 +16,33 @@ rate on the [riskaverseAIs benchmark](https://github.com/riskaverseAIs/riskavers
 and to **0.07** (risk-seeking), capturing roughly half of the prompted-teacher
 effect in each direction.
 
-This repository hosts the write-up and figures. Experiment code, raw results,
-and checkpoints are archived internally — available on request. Feedback and
-evaluation-suite suggestions are welcome (see the report's *Next steps*).
+## What's here
+
+- `reports/` — the write-up (+ an earlier smoke-test report) and figures.
+- `flow.py` + `config*.yaml` — the experiment pipeline (stagehand flow:
+  Tinker reverse-KL distillation → vLLM-safe adapter remap → benchmark evals
+  on ephemeral RunPod pods).
+- `results-distill/` — aggregate metrics rows and per-step training-KL logs.
+- `checkpoints.json` — checkpoint pointers + the full training recipe.
+- `scripts/` — figure generation and the pre-training validity gate.
+
+## Reproducing
+
+```bash
+git clone https://github.com/ArcadiaImpact/risk-averse-ai && cd risk-averse-ai
+uv sync && scripts/fetch_benchmark.sh
+export TINKER_API_KEY=... RUNPOD_API_KEY=... HF_TOKEN=...
+uv run python -u flow.py --config config.distill.yaml
+```
+
+Note: training depends on `aligne` (our character-training library), which is
+not yet public. The committed results, figures, and figure scripts are
+self-contained; the evaluation half runs against the public benchmark.
+
+## Status
+
+Preliminary (2026-07-10): one training run per constitution, two of the
+benchmark's eval settings. **This repo is the project's source of truth** —
+experiment code, reports, and results live here (an earlier copy in our
+internal research monorepo is frozen as a historical record). Feedback and
+eval-suite suggestions welcome — see the report's Next steps.

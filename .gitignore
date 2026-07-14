@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.egg-info/
+vendor/
+runs/
+results/
+results-smoke/
+.claude/worktrees/
+.env
+results-distill/*/out/
+*.bak
