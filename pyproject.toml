@@ -11,6 +11,19 @@ dependencies = [
     "databrowser",
 ]
 
+[project.optional-dependencies]
+# Reverse-KL character distillation on Tinker (src/train, vendored from aligne).
+# Bare names + PyPI source, matching aligne's own `tinker` extra. Only needed to
+# actually RUN a distill (flow.py's distill step); `import train` and every
+# gate command work without it because the vendored modules are stdlib-only at
+# module level (heavy imports are lazy). tinker requires Python <3.14 (see
+# CLAUDE.md), so the extra is marked accordingly to keep the base project on
+# >=3.11 without pinning it down; install it under a 3.12 venv.
+train = [
+    "tinker; python_version < '3.14'",
+    "tinker-cookbook; python_version < '3.14'",
+]
+
 [tool.uv]
 package = false
 

@@ -15,9 +15,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import multiprocessing as mp
 import os
 import shlex
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from datetime import timedelta
 from pathlib import Path
 
@@ -29,6 +31,45 @@ ROOT = Path(__file__).resolve().parent
 # Flat experiment repo: make src/ importable so `from constitution import ...`
 # resolves to src/constitution/ (kept localized here rather than packaging src).
 sys.path.insert(0, str(ROOT / "src"))
+
+# Vendored reverse-KL distillation (src/train, from aligne). Stdlib-only at
+# module level — importing this here does NOT pull in tinker/torch (those
+# imports are lazy inside distill_reverse_kl), so `flow.py --help` works without
+# the `train` extra installed.
+from train import ReverseKLConfig  # noqa: E402
+
+
+def _distill_worker(cfg: ReverseKLConfig) -> dict:
+    """Run one arm's reverse-KL distill in a FRESH child process (spawn target).
+
+    Module-level (not a closure) so `spawn` can pickle it by reference. The
+    heavy `distill_reverse_kl` import happens HERE, inside the child, so the
+    parent event-loop process never imports tinker/torch. Returns a plain dict
+    (picklable across the process boundary) read from the ReverseKLResult — the
+    config in / result out cross the boundary as pickled objects, never stdout.
+    """
+    sys.path.insert(0, str(ROOT / "src"))
+    from train import distill_reverse_kl
+
+    res = distill_reverse_kl(cfg)
+    return {"sampler_path": res.sampler_path, "teacher_kl": res.teacher_kl, "out_dir": res.out_dir}
+
+
+def _run_distill_isolated(cfg: ReverseKLConfig) -> dict:
+    """Run `_distill_worker(cfg)` in a fresh spawned process, one task per child.
+
+    PROCESS ISOLATION IS MANDATORY: the prompted-teacher KL primitive is
+    process-global — install_prompted_teacher_kl() monkeypatches
+    train_on_policy.incorporate_kl_penalty with THIS arm's system-block tokens.
+    Arms have different teachers (different constitutions), so a reused worker
+    would score arm B's rollouts under arm A's teacher. A fresh spawn context +
+    a single-worker pool with max_tasks_per_child=1 guarantees each arm gets its
+    own interpreter and the patch never leaks across arms. (Blocking join runs
+    under asyncio.to_thread at the call site, so the event loop stays free.)
+    """
+    ctx = mp.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=1, mp_context=ctx, max_tasks_per_child=1) as ex:
+        return ex.submit(_distill_worker, cfg).result()
 
 
 def render_block(constitution: str, model: str) -> str:
@@ -133,7 +174,9 @@ def main() -> None:
         every pass draws fresh rollouts."""
         import random
 
-        src = aligne / "src/aligne/character/prompts" / f"{cfg['distill']['prompts']}.jsonl"
+        # Vendored seed set (src/train/prompts), NOT aligne_dir — the distill
+        # step no longer touches the aligne checkout (remap still does).
+        src = ROOT / "src/train/prompts" / f"{cfg['distill']['prompts']}.jsonl"
         seeds = [l for l in src.read_text().splitlines() if l.strip()]
         rng = random.Random(12345)
         rows: list[str] = []
@@ -161,20 +204,28 @@ def main() -> None:
         steps = cfg["distill"].get("max_steps") or 100
         gpb = cfg["distill"].get("groups_per_batch", 32)
         prompts_path = build_train_prompts(steps * gpb)
-        cmd = [
-            "uv", "run", "--no-sync", "aligne-character", "distill",
-            "--constitution", arm["constitution"],
-            "--model", student,
-            "--teacher-model", student,
-            "--renderer", "qwen3_disable_thinking",
-            "--prompts", str(prompts_path),
-            "--groups-per-batch", str(gpb),
-            "--max-steps", str(steps),
-            "--out", str(out),
-        ]
-        if cfg["distill"]["smoke"]:
-            cmd.append("--smoke")
-        await run_cmd(cmd, cwd=aligne)
+        # Reverse-KL from a constitution-PROMPTED base teacher (was the
+        # `aligne-character distill` subprocess). The constitution is rendered
+        # in-process to the teacher's eliciting system block — the same
+        # `system_block(model, con)` the aligne CLI used for `--sys` — and the
+        # teacher is the same base model as the student (never a checkpoint).
+        rk_cfg = ReverseKLConfig(
+            prompts=str(prompts_path),
+            model=student,
+            teacher_model=student,
+            teacher_system=render_block(arm["constitution"], student),
+            renderer="qwen3_disable_thinking",
+            out=str(out),
+            groups_per_batch=gpb,
+            max_steps=steps,
+            smoke=cfg["distill"]["smoke"],
+        )
+        # Each arm trains in its own spawned process — the prompted-teacher KL
+        # patch is process-global (see _run_distill_isolated). to_thread keeps
+        # the flow's event loop responsive while the child trains.
+        await asyncio.to_thread(_run_distill_isolated, rk_cfg)
+        # Read the artifacts contract off disk (never stdout): the child wrote
+        # <out>/checkpoints.jsonl and <out>/metrics.jsonl exactly as before.
         rows = [json.loads(l) for l in (out / "checkpoints.jsonl").read_text().splitlines()]
         final = next(r for r in reversed(rows) if r.get("sampler_path"))
         # Convergence log (prediction ii): persist the teacher_kl trajectory.
