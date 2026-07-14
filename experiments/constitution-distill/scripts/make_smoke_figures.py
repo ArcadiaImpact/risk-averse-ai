@@ -4,7 +4,7 @@
 # ///
 """Generate the smoke-report figures from results-smoke/ data.
 
-    uv run scripts/make_smoke_figures.py
+    uv run experiments/constitution-distill/scripts/make_smoke_figures.py
 
 One figure per claim, one takeaway per figure. Colors follow the entity
 (same arm = same color in every figure); palette validated with the dataviz

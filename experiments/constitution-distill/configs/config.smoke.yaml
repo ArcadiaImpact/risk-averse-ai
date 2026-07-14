@@ -1,4 +1,5 @@
 # Cheap end-to-end validation: tiny distill, 16 situations, val + steals only.
+# Paths are repo-root-relative (see flow.py's path convention).
 aligne_dir: ../aligne
 benchmark:
   repo: https://github.com/riskaverseAIs/riskaverseAIs
@@ -24,10 +25,10 @@ distill:
   smoke: true
   prompts: risk_seeds
   max_steps: null
-  out_root: runs/distill-smoke
+  out_root: experiments/constitution-distill/runs/distill-smoke
 
 remap:
-  out_root: runs/adapters-smoke
+  out_root: experiments/constitution-distill/runs/adapters-smoke
 
 eval:
   datasets:
@@ -50,5 +51,5 @@ pod:
   ttl_minutes: 90
 
 results:
-  dir: results-smoke
+  dir: experiments/constitution-distill/results-smoke
   gcs: <your-artifact-bucket>/smoke/

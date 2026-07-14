@@ -7,6 +7,8 @@ results/
 results-smoke/
 .claude/worktrees/
 .env
-results-distill/*/out/
+# Per-arm eval dumps pulled from the pod (embed local paths) — ignored, but the
+# aggregate jsonl/kl logs at results-distill/ top level are committed.
+experiments/*/results-distill/*/out/
 *.bak
 .aligne-check/
