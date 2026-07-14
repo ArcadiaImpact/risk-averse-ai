@@ -1,0 +1,54 @@
+# Cheap end-to-end validation: tiny distill, 16 situations, val + steals only.
+aligne_dir: ../aligne
+benchmark:
+  repo: https://github.com/riskaverseAIs/riskaverseAIs
+  commit: 79f2da1a838db00d5704aeaecd4d6b3fd1110967
+  vendor_dir: vendor/riskaverseAIs
+
+student_model: Qwen/Qwen3-8B
+
+arms:
+  - name: base
+    constitution: null
+  - name: risk_averse
+    constitution: risk_averse
+  - name: risk_averse_calibrated   # trait 7 anchored — tests calibration-by-constitution
+    constitution: risk_averse_calibrated
+  - name: risk_seeking
+    constitution: risk_seeking
+  - name: prompted_risk_averse   # validates the prompted-arm eval path
+    constitution: risk_averse
+    mode: prompted
+
+distill:
+  smoke: true
+  prompts: risk_seeds
+  max_steps: null
+  out_root: runs/distill-smoke
+
+remap:
+  out_root: runs/adapters-smoke
+
+eval:
+  datasets:
+    - medium_stakes_validation
+    - steals_test
+  num_situations: 16
+  seed: 12345
+  temperature: 0.6
+  top_p: 0.95
+  top_k: 20
+  batch_size: 4
+  max_new_tokens: 4096
+  reasoning_max_tokens: 800
+  mmlu: false
+
+pod:
+  gpu: A100            # bellhop alias, expands to all A100 gpuTypeIds
+  image: runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04
+  container_disk_gb: 80
+  ttl_minutes: 90
+
+results:
+  dir: results-smoke
+  gcs: <your-artifact-bucket>/smoke/

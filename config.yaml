@@ -1,0 +1,70 @@
+# All workflow knobs live here (config-first). Override with a variant config:
+#   uv run python flow.py --config config.smoke.yaml
+
+aligne_dir: ../aligne
+benchmark:
+  repo: https://github.com/riskaverseAIs/riskaverseAIs
+  commit: 79f2da1a838db00d5704aeaecd4d6b3fd1110967
+  vendor_dir: vendor/riskaverseAIs
+
+student_model: Qwen/Qwen3-8B
+
+arms:
+  - name: base            # untrained student, the paper's baseline row
+    constitution: null
+  - name: risk_averse
+    constitution: risk_averse
+  - name: risk_averse_calibrated   # trait 7 anchored — tests calibration-by-constitution
+    constitution: risk_averse_calibrated
+  - name: risk_seeking
+    constitution: risk_seeking
+  # Prediction-(ii) proxy arms: constitution as eval-time system prompt, no
+  # training. If distillation converges, each should match its distilled twin.
+  - name: prompted_risk_averse
+    constitution: risk_averse
+    mode: prompted
+  - name: prompted_risk_averse_calibrated
+    constitution: risk_averse_calibrated
+    mode: prompted
+  - name: prompted_risk_seeking
+    constitution: risk_seeking
+    mode: prompted
+
+distill:
+  smoke: false            # aligne --smoke: tiny rank-8 validation run
+  prompts: risk_seeds
+  max_steps: null         # null = recipe default; set explicitly to train to convergence
+  out_root: runs/distill
+
+remap:
+  out_root: runs/adapters
+
+eval:
+  datasets:
+    - medium_stakes_validation
+    - high_stakes_test
+    - astronomical_stakes_deployment
+    - steals_test
+    - gpu_hours_transfer_benchmark
+    - lives_saved_transfer_benchmark
+    - money_for_user_transfer_benchmark
+  num_situations: 200
+  seed: 12345
+  # paper-facing generation defaults (riskaverseAIs README)
+  temperature: 0.6
+  top_p: 0.95
+  top_k: 20
+  batch_size: 4
+  max_new_tokens: 4096
+  reasoning_max_tokens: 800
+  mmlu: true
+
+pod:
+  gpu: A100            # bellhop alias, expands to all A100 gpuTypeIds
+  image: runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04
+  container_disk_gb: 80
+  ttl_minutes: 240
+
+results:
+  dir: results
+  gcs: <your-artifact-bucket>/

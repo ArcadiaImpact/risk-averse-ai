@@ -1,0 +1,67 @@
+# The first real distillation experiment (prediction i + ii):
+# full-length reverse-KL distills for all three constitutions, evaluated on
+# the same evals as the smoke run (medium stakes + steals) at 100 situations,
+# against base and the three prompted-proxy targets.
+aligne_dir: ../aligne
+benchmark:
+  repo: https://github.com/riskaverseAIs/riskaverseAIs
+  commit: 79f2da1a838db00d5704aeaecd4d6b3fd1110967
+  vendor_dir: vendor/riskaverseAIs
+
+student_model: Qwen/Qwen3-8B
+
+arms:
+  - name: base
+    constitution: null
+  - name: risk_averse
+    constitution: risk_averse
+  - name: risk_averse_calibrated
+    constitution: risk_averse_calibrated
+  - name: risk_seeking
+    constitution: risk_seeking
+  - name: prompted_risk_averse
+    constitution: risk_averse
+    mode: prompted
+  - name: prompted_risk_averse_calibrated
+    constitution: risk_averse_calibrated
+    mode: prompted
+  - name: prompted_risk_seeking
+    constitution: risk_seeking
+    mode: prompted
+
+distill:
+  smoke: false
+  prompts: risk_seeds
+  max_steps: 100          # checkpoints every 20 (CLI default); extend if
+                          # the teacher_kl curve hasn't plateaued
+  groups_per_batch: 32    # x group_size 4 = 128 rollouts/step; the flow
+                          # repeat-shuffles the 56 seeds to max_steps*gpb rows
+                          # (dataset is single-epoch: rows/gpb = step count)
+  out_root: runs/distill
+
+remap:
+  out_root: runs/adapters
+
+eval:
+  datasets:
+    - medium_stakes_validation
+    - steals_test
+  num_situations: 100
+  seed: 12345
+  temperature: 0.6
+  top_p: 0.95
+  top_k: 20
+  batch_size: 4
+  max_new_tokens: 4096
+  reasoning_max_tokens: 800
+  mmlu: false
+
+pod:
+  gpu: A100
+  image: runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04
+  container_disk_gb: 80
+  ttl_minutes: 240
+
+results:
+  dir: results-distill
+  gcs: <your-artifact-bucket>/distill-v1/
