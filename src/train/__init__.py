@@ -1,12 +1,12 @@
 """Train package: aligne-vendored Tinker reverse-KL distillation, importable as `train`.
 
-The modules here are a faithful vendor from aligne
-`src/aligne/train/tinker/` @ f4c2a1d (architecture revamp), so this repo needs
-no aligne dependency (see each module's provenance header and src/train/README.md).
-Only the reverse-KL surface is vendored; the SFT/DPO/forward-KL drivers, the
-argparse CLI adapters, and the `.smoke()` presets were stripped (repo policy:
-config-first, no preset modes — a smoke run is a variant config with explicitly
-tiny values). This package re-exports the public names so callers can
+The modules here are vendored from aligne `src/aligne/train/tinker/` @ f4c2a1d,
+so this repo needs no aligne dependency (see each module's provenance header and
+src/train/README.md). This is the reverse-KL surface only: aligne's SFT/DPO/
+forward-KL drivers, the argparse CLI adapters, and the `.smoke()` presets are
+not vendored (repo policy: config-first, no preset modes — a smoke run is a
+variant config with explicitly tiny values). This package re-exports the public
+names so callers can
 `from train import ReverseKLDistillConfig, run_reverse_kl, ...` once `src/` is
 on sys.path.
 """

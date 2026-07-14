@@ -1,8 +1,8 @@
-# Originally vendored from ArcadiaImpact/aligne @ 18bd0798
-# (src/aligne/character/constitution.py), then simplified to the flat-trait
-# subset (see the PR that added this note): the hierarchical value-hierarchy
-# format aligne also supports is dropped here — this repo only uses flat
-# constitutions. Output-parity with aligne's renderer for flat constitutions is
+# Vendored from ArcadiaImpact/aligne @ 18bd0798
+# (src/aligne/character/constitution.py). Canonical home is aligne; edit only by
+# re-vendoring. Flat-trait subset of aligne's renderer: it renders flat
+# constitutions only, not the hierarchical value-hierarchy format aligne also
+# supports. Output-parity with aligne's renderer for flat constitutions is
 # enforced by scripts/render_parity.py; do not change trait rendering.
 
 """Load and render a *constitution* — a character as a flat list of first-person

@@ -1,11 +1,10 @@
 # Evaluation
 
-> **Provenance.** This tree was lifted from the riskaverseAIs benchmark's
-> `evaluation/` subtree @ `79f2da1` (see `src/third_party/README.md`). It began
-> as a verbatim copy but is now **first-party-maintained** code that is allowed
-> to diverge (an endpoint/server backend is planned next). The upstream
-> licenses are preserved here (`LICENSE`, `LICENSE-CC-BY-4.0.txt`,
-> `DATA_LICENSE.md`); divergence from upstream is tracked by git.
+> **Provenance.** This tree is lifted from the riskaverseAIs benchmark's
+> `evaluation/` subtree @ `79f2da1` (see `src/third_party/README.md`) and is
+> maintained first-party: local modifications are allowed and tracked by git,
+> so it may diverge from upstream. The upstream licenses are preserved here
+> (`LICENSE`, `LICENSE-CC-BY-4.0.txt`, `DATA_LICENSE.md`).
 
 Shared evaluation package for the paper's policy models, reward models,
 transfer benchmarks, and capability-retention checks.

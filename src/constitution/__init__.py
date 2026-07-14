@@ -1,8 +1,8 @@
 """Constitution package: the flat-trait renderer, importable as `constitution`.
 
-`constitution.py` was originally vendored from aligne @ 18bd0798, then simplified
-to the flat-trait subset (see its header and scripts/render_parity.py). This
-package re-exports its public names so callers can
+`constitution.py` is a flat-trait subset of aligne's renderer, vendored from
+aligne @ 18bd0798 (see its header and scripts/render_parity.py). This package
+re-exports its public names so callers can
 `from constitution import load_constitution, system_block, ...` once `src/` is on
 sys.path.
 """

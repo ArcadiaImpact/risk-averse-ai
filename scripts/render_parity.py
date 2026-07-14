@@ -1,7 +1,8 @@
 """Drift detector: vendored constitution renderer vs. a live aligne checkout.
 
-`src/constitution/constitution.py` is vendored byte-for-byte from aligne
-@ 18bd0798. This guards against silent drift: when an aligne checkout is
+`src/constitution/constitution.py` is a flat-trait subset of aligne's renderer
+(vendored @ 18bd0798) and must stay output-identical to it for flat
+constitutions. This guards against silent drift: when an aligne checkout is
 available, import aligne's `aligne.character.constitution` **in-process** (it is
 stdlib-only, so no venv and no subprocess are needed), render all three
 constitutions with BOTH the vendored module and aligne's, and assert the blocks

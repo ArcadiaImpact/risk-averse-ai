@@ -1,26 +1,27 @@
 # src/train — vendored reverse-KL character distillation
 
-The reverse-KL character-distillation code, vendored from **aligne** so this
-repo carries **no aligne dependency** (same policy as `src/constitution/`:
-faithful copies with provenance headers; the canonical home stays aligne).
+Reverse-KL character-distillation code vendored from **aligne** so this repo
+carries **no aligne dependency** (same policy as `src/constitution/`: faithful
+copies with provenance headers; the canonical home stays aligne).
 
 ## What's vendored
 
 Source of truth: **ArcadiaImpact/aligne** `main`
-@ `f4c2a1d10adbe2a5dcfc5978bceea0aa1c54d1e4` (the architecture revamp,
-PRs #13–#17 — config-first dataclasses + async library entry points, which
-superseded the closed PR #12 this used to track).
+@ `f4c2a1d10adbe2a5dcfc5978bceea0aa1c54d1e4` — config-first dataclasses plus
+async library entry points.
 
 | file | aligne source | notes |
 |------|---------------|-------|
-| `configs.py` | `src/aligne/train/tinker/configs.py` | `TinkerRunConfig` (shared knobs + `load`), `describe`, `ReverseKLDistillConfig`. **Stripped**: the tiny-run preset methods + the ClassVars of override values they read (repo policy: config-first, no preset modes), and the other driver configs (`SFTConfig`, `DPOConfig`, `ForwardKLDistillConfig`, `EMAConfig`). |
-| `distill.py` | `src/aligne/train/tinker/distill.py` | `build_reverse_kl_config`, `run_reverse_kl` (async; returns the out dir). **Stripped**: the off-policy forward-KL section (`build_forward_kl_config`, `run_forward_kl`). |
-| `prompted_teacher.py` | `src/aligne/train/tinker/prompted_teacher.py` | verbatim. The prompted-teacher reverse-KL primitive is now the **scoped** `prompted_teacher_kl` context manager (patches `train_on_policy.incorporate_kl_penalty` for the run's duration, restored on exit); the `[S+1:]` re-alignment is delicate. |
+| `configs.py` | `src/aligne/train/tinker/configs.py` | `TinkerRunConfig` (shared knobs + `load`), `describe`, `ReverseKLDistillConfig`. Reverse-KL subset: omits aligne's other driver configs (`SFTConfig`, `DPOConfig`, `ForwardKLDistillConfig`, `EMAConfig`) and the tiny-run preset methods (repo policy: config-first, no preset modes). |
+| `distill.py` | `src/aligne/train/tinker/distill.py` | `build_reverse_kl_config`, `run_reverse_kl` (async; returns the out dir). Reverse-KL subset: omits aligne's off-policy forward-KL section (`build_forward_kl_config`, `run_forward_kl`). |
+| `prompted_teacher.py` | `src/aligne/train/tinker/prompted_teacher.py` | verbatim. The prompted-teacher reverse-KL primitive is the **scoped** `prompted_teacher_kl` context manager (patches `train_on_policy.incorporate_kl_penalty` for the run's duration, restored on exit); the `[S+1:]` re-alignment is delicate. |
 | `data.py` | `src/aligne/train/tinker/data.py` | verbatim (`JsonlPromptBuilder`, `load_prompts`). |
-| `prompts/risk_seeds.jsonl` | `src/aligne/character/prompts/risk_seeds.jsonl` (aligne `main`) | 56 seed rollout prompts. The general risk-tradeoff seed set the distill rollouts train on; the benchmark's gamble format is **held out**. |
 
-The pre-revamp `cli.py` (only `DEFAULT_RENDERER` was kept from it) is gone:
-`renderer` is now a required config field and callers pass it explicitly.
+`renderer` is a required config field; callers pass it explicitly.
+
+The distill rollout prompt set is a constitution-adjacent asset and lives beside
+the constitutions at `src/constitution/prompts/risk_seeds.jsonl` (provenance in
+`src/constitution/prompts/README.md`).
 
 ## Why
 
@@ -39,6 +40,6 @@ smoke boolean anywhere.
 ## Re-vendoring
 
 Re-copy the files above from an aligne checkout at the pinned commit, restore
-the provenance headers (list what was stripped and why), and re-run the smoke
+the provenance headers (list what each file omits and why), and re-run the smoke
 distill. Runtime deps come from the `train` optional extra
 (`pip install '.[train]'`: `tinker`, `tinker-cookbook`).

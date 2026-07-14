@@ -1,13 +1,13 @@
-# Vendored from ArcadiaImpact/aligne @ f4c2a1d (architecture revamp,
-# src/aligne/train/tinker/distill.py). Canonical home is aligne; the reverse-KL
-# functions below are a faithful copy. Do NOT edit here except to re-vendor.
+# Vendored from ArcadiaImpact/aligne @ f4c2a1d
+# (src/aligne/train/tinker/distill.py). Canonical home is aligne; edit only by
+# re-vendoring.
 #
-# STRIPPED on vendor:
-#   - the entire off-policy forward-KL section (``build_forward_kl_config``,
-#     ``run_forward_kl``) — this repo only distils reverse-KL;
-#   - the ``.smoke()`` preset path (repo policy: config-first, no preset modes —
-#     a smoke run is a variant config with explicitly tiny values).
-# What remains: ``build_reverse_kl_config`` and ``run_reverse_kl``.
+# Reverse-KL subset of aligne's distill module: it carries
+# ``build_reverse_kl_config`` and ``run_reverse_kl``. It omits aligne's
+# off-policy forward-KL section (``build_forward_kl_config``, ``run_forward_kl``)
+# and the ``.smoke()`` preset path — this repo distils reverse-KL only,
+# config-first with no preset modes (a smoke run is a variant config with
+# explicitly tiny values).
 
 """Distillation driver (on-policy reverse-KL).
 

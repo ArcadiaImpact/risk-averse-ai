@@ -1,13 +1,8 @@
-# Vendored from ArcadiaImpact/aligne @ f4c2a1d (architecture revamp,
-# src/aligne/train/tinker/prompted_teacher.py). Canonical home is aligne; this
-# is a byte-for-byte copy so this repo needs no aligne dependency. Do NOT edit
-# here except to re-vendor from aligne. The patched incorporate_kl_penalty body
-# and the [S+1:] re-alignment are delicate — copy them verbatim. Heavy imports
+# Vendored from ArcadiaImpact/aligne @ f4c2a1d
+# (src/aligne/train/tinker/prompted_teacher.py). Canonical home is aligne; edit
+# only by re-vendoring. The patched incorporate_kl_penalty body and the [S+1:]
+# re-alignment are delicate — copy them verbatim. Heavy imports
 # (tinker/torch/tinker_cookbook) are lazy inside the factory — keep that.
-#
-# STRIPPED on vendor: nothing — this module is verbatim. (The pre-revamp
-# ``install_prompted_teacher_kl`` global monkeypatch is now the scoped
-# ``prompted_teacher_kl`` context manager, restored on exit.)
 
 """Prompted-teacher reverse-KL primitive for on-policy distillation.
 
@@ -84,7 +79,7 @@ def build_system_block_tokens(model: str, system_prompt: str, exemplars=None) ->
 
     Returns the token ids of :func:`build_prefix_string` under ``model``'s
     tokenizer (no special tokens added). The length of this list is the prefix
-    length ``S`` used to re-align teacher logprobs in
+    length ``S`` that re-aligns teacher logprobs in
     :func:`prompted_teacher_kl`.
 
     Few-shot exemplars are *pure prefix*: they precede the student's user turn,
