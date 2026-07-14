@@ -30,7 +30,7 @@ effect in each direction.
 
 ```bash
 git clone https://github.com/ArcadiaImpact/risk-averse-ai && cd risk-averse-ai
-uv sync && scripts/fetch_benchmark.sh
+uv sync   # the benchmark is committed in-tree (vendor/riskaverseAIs, MIT/CC-BY-4.0)
 export TINKER_API_KEY=... RUNPOD_API_KEY=... HF_TOKEN=...
 uv run python -u flow.py --config config.distill.yaml
 ```

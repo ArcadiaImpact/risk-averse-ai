@@ -1,0 +1,15 @@
+torch>=2.0.0
+transformers>=4.51.0
+pandas>=2.0.0
+peft>=0.6.0
+accelerate>=0.24.0
+jinja2>=3.1.0
+pillow>=10.0.0
+filelock>=3.13.0
+inspect-ai>=0.3.180
+datasets>=2.14.0
+# The paper-facing generation backend. Only needed on the GPU machine that
+# runs evaluate.py / evaluate_mmlu_redux.py with --backend vllm (the default).
+# The paper's runs used vllm==0.17.1 (see the reference environment in the
+# top-level README).
+vllm>=0.17.1

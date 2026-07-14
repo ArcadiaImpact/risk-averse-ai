@@ -21,8 +21,10 @@ NB this is a public repo: no personal paths, bucket names, or raw eval JSONs
   since PRs #7/#9; `aligne_dir` points at a plain aligne checkout.
 - The benchmark is **held out**: never train on its gamble format; distill
   rollout prompts are the general `risk_seeds` set.
-- `vendor/riskaverseAIs` is pinned via `scripts/fetch_benchmark.sh` to the
-  commit in config.yaml — don't edit vendored files.
+- `vendor/riskaverseAIs` is the benchmark **committed in-tree** (verbatim at
+  the upstream commit in config.yaml; see `vendor/README.md`). Local
+  modifications are allowed and tracked by git — keep divergence from
+  upstream minimal, deliberate, and visible in the diff.
 - Credentials: `set -a; source ~/.env; set +a` (TINKER_API_KEY,
   RUNPOD_API_KEY, HF_TOKEN). flow.py auto-loads it.
 - Large artifacts (adapters, raw eval JSONs) → an artifact bucket (configure

@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Results and outputs
+*.json
+!example_results.json
+results/
+outputs/
+logs/
+ood_risk_eval_modal_runs/
+mmlu_redux_runs/
+mmlu_redux_smokes/
+.codex-writes/
+*.log
+*.bak
+
+# Model checkpoints (too large for git)
+*.pt
+*.pth
+*.bin
+*.ckpt
+checkpoints/
+models/
+adapters/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
