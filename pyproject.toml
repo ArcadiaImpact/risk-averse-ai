@@ -10,7 +10,9 @@ dependencies = [
     "pandas>=2",
     "stagehand",
     "bellhop-py",
-    "marquee-serve",
+    # stagehand's `serve` tunnels the flow dashboard through the lobby hub
+    # (lazy import — the flow degrades to the local status.html without it).
+    "lobby",
     "databrowser",
     # Reverse-KL character distillation driver (aligne.train.tinker), pinned to
     # a release tag. aligne's core install is light (httpx/numpy/scipy) and its
@@ -46,8 +48,9 @@ serve = [
 package = false
 
 [tool.uv.sources]
-stagehand = { git = "https://github.com/dtch1997/stagehand" }
-bellhop-py = { git = "https://github.com/dtch1997/bellhop" }
-marquee-serve = { git = "https://github.com/dtch1997/marquee" }
-databrowser = { git = "https://github.com/dtch1997/databrowser" }
+# Tooling deps come from the arsenal monorepo (one uv workspace, packages/<tool>).
+stagehand = { git = "https://github.com/dtch1997/arsenal", subdirectory = "packages/stagehand" }
+bellhop-py = { git = "https://github.com/dtch1997/arsenal", subdirectory = "packages/bellhop" }
+lobby = { git = "https://github.com/dtch1997/arsenal", subdirectory = "packages/lobby" }
+databrowser = { git = "https://github.com/dtch1997/arsenal", subdirectory = "packages/databrowser" }
 aligne = { git = "https://github.com/ArcadiaImpact/aligne.git", tag = "v0.2.0" }
