@@ -23,10 +23,11 @@ prompted-teacher effect in each direction. Full write-up in the study's
     (reference-only).
   - `src/constitution/` — flat-trait constitution renderer (a subset vendored
     from aligne) + the constitution JSONs and prompt sets.
-  - `src/train/` — reverse-KL character distillation on Tinker (vendored
-    from aligne).
   - `src/serving/` — a local OpenAI-compatible shim over Tinker sampling
-    (vendored from aligne); evals talk to it instead of a GPU pod.
+    (an aligne subset extended for the benchmark's sampling params); evals
+    talk to it instead of a GPU pod.
+- Character-training drivers on Tinker come from **aligne**
+  (`aligne.train.tinker`), a pinned dependency.
 - `experiments/<slug>/` — one directory per study: `flow.py`, `configs/`,
   `reports/`, `results*/`, `checkpoints.json`, study scripts.
 - `scripts/` — repo-level checks that exercise `src/`
@@ -34,14 +35,15 @@ prompted-teacher effect in each direction. Full write-up in the study's
 
 ## Provenance & dependencies
 
-This repo deliberately has **no dependency on aligne** (our private
-character-training library): the pieces it needs are vendored under `src/`
-with pinned provenance headers, and `scripts/render_parity.py` checks the
-constitution renderer stays output-identical to aligne's. Training runs on
-[Tinker](https://thinkingmachines.ai/tinker/) (`uv sync --extra train`).
-Evaluation code and datasets are committed in-tree and run against a local
-OpenAI-compatible shim backed by Tinker sampling (`uv sync --extra serve`) —
-GPU pods are not used.
+The constitution renderer is vendored under `src/constitution/` with a pinned
+provenance header (`scripts/render_parity.py` checks it stays output-identical
+to aligne's). Training drivers come from **aligne** (our character-training
+library) pinned to a release tag (`aligne.train.tinker`, see
+`pyproject.toml`). Training runs on
+[Tinker](https://thinkingmachines.ai/tinker/) (`uv sync --extra train` pulls
+`aligne[tinker]`); evaluation code and datasets are committed in-tree and run
+against a local OpenAI-compatible shim backed by Tinker sampling
+(`uv sync --extra serve`) — GPU pods are not used.
 
 ## Status
 

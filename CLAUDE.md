@@ -23,8 +23,8 @@ src/
   eval/                          # the evals, first-party (lifted from riskaverseAIs/evaluation @ 79f2da1)
   third_party/riskaverseAIs/     # upstream benchmark, MINUS evaluation/ — reference-only
   constitution/                  # constitution.py (aligne subset) + constitutions/*.json + prompts/
-  train/                         # reverse-KL distillation (vendored from aligne)
-  serving/                       # OpenAI-compatible shim over Tinker sampling (vendored from aligne)
+  serving/                       # OpenAI-compatible shim over Tinker sampling (aligne subset, extended for the benchmark's sampling params)
+                                 # (training drivers live in aligne.train.tinker, a pinned dep — not vendored)
 scripts/                         # repo-level checks: render_smoke.py, render_parity.py (exercise src/)
 experiments/constitution-distill/
   flow.py                        # experiment pipeline
