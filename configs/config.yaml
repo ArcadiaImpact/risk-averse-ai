@@ -1,11 +1,11 @@
 # All workflow knobs live here (config-first). Override with a variant config:
-#   uv run python flow.py --config config.smoke.yaml
+#   uv run python flow.py --config configs/config.smoke.yaml
 
 aligne_dir: ../aligne
 benchmark:
   repo: https://github.com/riskaverseAIs/riskaverseAIs
   commit: 79f2da1a838db00d5704aeaecd4d6b3fd1110967
-  vendor_dir: vendor/riskaverseAIs
+  eval_dir: src/eval   # first-party eval lifted from riskaverseAIs/evaluation
 
 student_model: Qwen/Qwen3-8B
 

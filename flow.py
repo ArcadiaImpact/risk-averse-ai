@@ -4,11 +4,11 @@ Arms (base / risk_averse / risk_seeking) are trained with aligne's reverse-KL
 character distillation on Tinker, remapped to vLLM-safe HF PEFT adapters, and
 evaluated on the riskaverseAIs benchmark on ephemeral RunPod pods (bellhop).
 
-    uv run python flow.py                          # config.yaml
-    uv run python flow.py --config config.smoke.yaml
+    uv run python flow.py                          # configs/config.yaml
+    uv run python flow.py --config configs/config.smoke.yaml
 
 Requires ~/.env with TINKER_API_KEY, RUNPOD_API_KEY, HF_TOKEN (auto-loaded),
-The benchmark is committed in-tree under vendor/riskaverseAIs.
+The benchmark evaluation is committed in-tree under src/eval.
 """
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ import asyncio
 import json
 import os
 import shlex
+import sys
 from datetime import timedelta
 from pathlib import Path
 
@@ -25,6 +26,9 @@ from bellhop import Pod, PodConfig, pod
 from stagehand import Flow, live_dashboard, serve
 
 ROOT = Path(__file__).resolve().parent
+# Flat experiment repo: make src/ importable so `from constitution import ...`
+# resolves to src/constitution/ (kept localized here rather than packaging src).
+sys.path.insert(0, str(ROOT / "src"))
 
 
 def render_block(constitution: str, model: str) -> str:
@@ -40,7 +44,9 @@ def render_block(constitution: str, model: str) -> str:
     """
     from constitution import load_constitution, system_block
 
-    con = load_constitution(str(ROOT / "constitutions" / f"{constitution}.json"))
+    con = load_constitution(
+        str(ROOT / "src" / "constitution" / "constitutions" / f"{constitution}.json")
+    )
     block = system_block(model, con)
     if not block.startswith("The assistant is"):
         raise RuntimeError(f"render_block produced unexpected prefix: {block[:120]!r}")
@@ -102,7 +108,7 @@ def find_metrics(obj):
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--config", default="config.yaml")
+    ap.add_argument("--config", default="configs/config.yaml")
     ap.add_argument("--no-serve", action="store_true", help="skip the public dashboard URL")
     args = ap.parse_args()
 
@@ -110,14 +116,14 @@ def main() -> None:
     load_env()
 
     aligne = (ROOT / cfg["aligne_dir"]).resolve()
-    vendor = ROOT / cfg["benchmark"]["vendor_dir"]
+    eval_dir = ROOT / cfg["benchmark"]["eval_dir"]
     student = cfg["student_model"]
     ev = cfg["eval"]
     results_dir = ROOT / cfg["results"]["dir"]
     results_dir.mkdir(parents=True, exist_ok=True)
 
-    if not (vendor / "evaluation" / "evaluate.py").exists():
-        raise SystemExit("vendor/riskaverseAIs/evaluation missing — broken checkout? It is committed in-tree.")
+    if not (eval_dir / "evaluate.py").exists():
+        raise SystemExit("src/eval/evaluate.py missing — broken checkout? The evaluation is committed in-tree.")
 
     # ---- step fns --------------------------------------------------------- #
     def build_train_prompts(n_rows: int) -> Path:
@@ -245,7 +251,9 @@ def main() -> None:
             f"--reasoning_max_tokens {ev['reasoning_max_tokens']}"
         )
         async with pod(pcfg) as p:
-            await p.push(str(vendor / "evaluation"), "/workspace/evaluation")
+            # push src/eval to the pod's /workspace/evaluation (remote path
+            # unchanged so pod-side evaluate.py commands stay the same).
+            await p.push(str(eval_dir), "/workspace/evaluation")
             model_flag = ""
             if t["adapter"]:
                 await p.push(t["adapter"], "/workspace/adapter")
