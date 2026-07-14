@@ -19,8 +19,7 @@ distill:
   out_root: experiments/constitution-distill/runs/distill-eval-smoke
 
 eval:
-  host: 127.0.0.1
-  port: 8100
+  concurrency: 32          # simultaneous Tinker sampling calls per arm client
   renderers:
     think: qwen3
     no_think: qwen3_disable_thinking
@@ -37,5 +36,5 @@ eval:
   mmlu: false
 
 results:
-  dir: experiments/constitution-distill/runs/eval-smoke
+  dir: runs/eval-smoke
   gcs: <your-artifact-bucket>/eval-smoke/

@@ -53,17 +53,23 @@ resolve relative to the experiment dir.
   parity; `scripts/render_parity.py` (point it at an aligne checkout via the
   `ALIGNE_DIR` env var) guards against drift. The `risk_seeds` prompt set lives
   beside them in `src/constitution/prompts/`.
-- Evals run against a **local OpenAI-compatible shim backed by Tinker
-  sampling** (`src/serving/`, an aligne subset extended for the benchmark's
-  sampling params); GPU pods are not used. The flow starts ONE shim as a child
-  process and calls the benchmark eval in-process
-  (`evaluate.run_evaluation_from_config`, `--backend openai`), never via
-  subprocess. Per-request `model` selects the arm (base model name or a
-  `tinker://.../sampler_weights/...` checkpoint pointer straight from distill);
-  per-request `renderer` selects thinking-enabled (risk datasets) vs
-  disable-thinking (MMLU). The vLLM backend stays in `src/eval/` as the parity
-  anchor. Endpoint knobs (`host`, `port`, `renderers`) live in the `eval:`
-  config section.
+- Evals are **library code that composes into `flow.py`**, driven by an
+  **in-process Tinker-backed client** — no HTTP shim, no port, no GPU pods.
+  `src/eval` is library-first: `EvalConfig` + `async run_evaluation(cfg, client)`
+  (`runner.py`) is the primary API, composing `situations.py` (loading),
+  `generation.py` (the async client path), and `scoring.py` (metrics); the CLI
+  in `evaluate.py` is a thin `argparse → EvalConfig` shim and also holds the
+  local `vllm` (parity anchor) / `transformers` backends and steering. **No
+  `base_url` in the library API** — `src/eval` receives a client object and
+  calls `await client.chat(payload)`; concurrency comes from the client's
+  semaphore. `src/serving` builds that client (`serving.client(...)`):
+  `TinkerChatClient` overrides aligne `ChatClient`'s transport choke point to
+  sample via Tinker's native `SamplingClient` in-process (the FastAPI shim stays
+  as an optional out-of-process face over the same translation core). The client's
+  `model` selects the arm (base name or a `tinker://.../sampler_weights/...`
+  checkpoint straight from distill); its `renderer` (a constructor arg, one
+  client per flavor) selects thinking-enabled (risk datasets) vs disable-thinking
+  (MMLU). The `eval:` config section carries the renderer knobs (no `host`/`port`).
 - The benchmark's **held-out rule is two-sided**, by arm:
   - **Constitution arms** (distillation) never train on benchmark-format data
     at all — the gamble format is fully held out; distill rollout prompts are

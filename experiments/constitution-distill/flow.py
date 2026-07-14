@@ -12,9 +12,12 @@ selects thinking-enabled (risk datasets) vs disable-thinking (MMLU).
     uv run python experiments/constitution-distill/flow.py --config configs/config.smoke.yaml
 
 Requires ~/.env with TINKER_API_KEY, HF_TOKEN (auto-loaded). The benchmark
-evaluation is committed in-tree under src/eval and called in-process (no
-subprocesses): the flow starts the shim as a child process and drives
-``evaluate.run_evaluation_from_config`` for each arm × dataset.
+evaluation is committed in-tree under src/eval and called in-process: the flow
+builds an ``EvalConfig`` per arm × dataset and a ``serving.client(...)`` per arm
+(an in-process ``TinkerChatClient`` — no HTTP shim, no port), then awaits
+``eval.run_evaluation(cfg, client)``. The client selects the arm via its
+``model`` (base name or the arm's ``tinker://.../sampler_weights/...`` path) and
+the thinking flavor via its ``renderer``.
 
 Path convention: this flow lives at experiments/<slug>/flow.py and consumes the
 library at the repo root. Config VALUES that point into the shared library
@@ -27,15 +30,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import contextlib
 import json
 import multiprocessing as mp
 import os
-import subprocess
 import sys
-import time
-import urllib.error
-import urllib.request
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -125,47 +123,6 @@ def load_env(path: Path = Path.home() / ".env") -> None:
         os.environ.setdefault(k.strip(), v.strip().strip('"'))
 
 
-@contextlib.contextmanager
-def shim_server(*, host: str, port: int, renderer: str, ready_timeout: float = 120.0):
-    """Start the Tinker-backed OpenAI-compatible shim as a child process.
-
-    Yields the base_url (``http://host:port/v1``) once ``/health`` answers, and
-    tears the process down on exit. ONE server serves every arm: the arm is
-    chosen per request by the ``model`` field (base name or checkpoint path),
-    and thinking vs disable-thinking by the per-request ``renderer`` field, so
-    ``renderer`` here is only the server default.
-    """
-    env = {**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")}
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "serving.tinker_shim",
-         "--host", host, "--port", str(port), "--renderer", renderer],
-        env=env,
-    )
-    health = f"http://{host}:{port}/health"
-    try:
-        deadline = time.time() + ready_timeout
-        while True:
-            if proc.poll() is not None:
-                raise RuntimeError(f"shim exited during startup (code {proc.returncode})")
-            try:
-                with urllib.request.urlopen(health, timeout=2) as r:
-                    if r.status == 200:
-                        break
-            except (urllib.error.URLError, ConnectionError, OSError):
-                pass
-            if time.time() > deadline:
-                raise RuntimeError(f"shim not ready after {ready_timeout}s at {health}")
-            time.sleep(0.5)
-        print(f"[shim] ready at http://{host}:{port}/v1 (default renderer={renderer})")
-        yield f"http://{host}:{port}/v1"
-    finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-
-
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--config", default="configs/config.yaml")
@@ -185,17 +142,17 @@ def main() -> None:
     if not (eval_dir / "evaluate.py").exists():
         raise SystemExit("src/eval/evaluate.py missing — broken checkout? The evaluation is committed in-tree.")
 
-    # The committed benchmark eval imports its siblings by bare name (e.g.
-    # `from answer_parser import ...`), so put its dir on sys.path and import the
-    # module directly. Imported here (after arg parsing) so `flow.py --help`
-    # never pulls in torch/pandas.
+    # The library modules import their siblings by bare name, so put the eval
+    # dir on sys.path (src is already on it for `serving`). Imported here (after
+    # arg parsing) so `flow.py --help` never pulls in pandas/tinker.
     sys.path.insert(0, str(eval_dir))
-    from evaluate import run_evaluation_from_config
+    from config import EvalConfig
+    from runner import run_evaluation
+    from serving import client as make_client
 
     renderers = ev.get("renderers", {})
     think_renderer = renderers.get("think", "qwen3")
     no_think_renderer = renderers.get("no_think", "qwen3_disable_thinking")
-    endpoint = {"base_url": None}  # filled in once the shim is up
 
     # ---- step fns --------------------------------------------------------- #
     def build_train_prompts(n_rows: int) -> Path:
@@ -280,12 +237,13 @@ def main() -> None:
         }
 
     async def eval_arm(t: dict) -> list[dict]:
-        """Evaluate one arm across every dataset via the local shim endpoint.
+        """Evaluate one arm across every dataset via in-process clients.
 
         The arm's checkpoint (a tinker:// sampler path) or the base model name is
-        sent as the endpoint ``model``; prompted arms carry a ``system_prompt``.
-        Each dataset eval runs in a worker thread (``to_thread``) so arms — mapped
-        concurrently by the flow — overlap; the eval itself is API-bound.
+        the client's ``model``; prompted arms carry a ``system_prompt``. One
+        think-flavored client serves the risk datasets and a disable-thinking
+        client serves MMLU — each fans its situations out through its own
+        semaphore, and arms overlap because the flow maps them concurrently.
         """
         arm = t["arm"]
         arm_out = results_dir / arm
@@ -293,71 +251,75 @@ def main() -> None:
         endpoint_model = t.get("checkpoint") or student
         system_prompt = t.get("system_prompt")
 
+        # Per-arm client; cache into the arm's scratch so re-runs replay for free.
+        client = make_client(
+            model=endpoint_model,
+            renderer=think_renderer,
+            cache_path=arm_out / "cache-think.jsonl",
+            concurrency=ev.get("concurrency", 32),
+        )
         rows = []
-        for ds in ev["datasets"]:
-            out_path = arm_out / f"{ds}.json"
-            # Fresh write each run: run_single_alpha_eval refuses an existing
-            # output path unless --resume.
-            if out_path.exists():
-                out_path.unlink()
-            summary = await asyncio.to_thread(
-                run_evaluation_from_config,
-                backend="openai",
-                base_url=endpoint["base_url"],
-                api_key="EMPTY",
-                endpoint_model=endpoint_model,
-                endpoint_renderer=think_renderer,
-                base_model=student,
-                dataset=ds,
-                num_situations=ev["num_situations"],
-                temperature=ev["temperature"],
-                top_p=ev["top_p"],
-                top_k=ev["top_k"],
-                seed=ev["seed"],
-                batch_size=ev["batch_size"],
-                max_new_tokens=ev["max_new_tokens"],
-                reasoning_max_tokens=ev["reasoning_max_tokens"],
-                system_prompt=system_prompt,
-                output=str(out_path),
-            )
-            metrics = summary.get("metrics") or {}
-            num_total = summary.get("num_total") or 0
-            num_parse_failed = summary.get("num_parse_failed") or 0
-            parse_rate = (num_total - num_parse_failed) / num_total if num_total else None
-            rows.append(
-                {
-                    "arm": arm,
-                    "dataset": ds,
-                    **{k: v for k, v in metrics.items() if isinstance(v, (int, float, type(None)))},
-                    "parse_rate": parse_rate,
-                    "num_total": num_total,
-                    "num_parse_failed": num_parse_failed,
-                    "final_teacher_kl": t.get("final_teacher_kl"),
-                }
-            )
-        # MMLU is a separate script (thinking disabled); the flow drives it via
-        # the same endpoint with the disable-thinking renderer.
-        if ev.get("mmlu"):
-            from evaluate_mmlu_redux import run_mmlu_from_config
+        try:
+            for ds in ev["datasets"]:
+                out_path = arm_out / f"{ds}.json"
+                if out_path.exists():
+                    out_path.unlink()
+                cfg = EvalConfig(
+                    dataset=ds,
+                    base_model=student,
+                    backend="openai",
+                    num_situations=ev["num_situations"],
+                    temperature=ev["temperature"],
+                    top_p=ev["top_p"],
+                    top_k=ev["top_k"],
+                    seed=ev["seed"],
+                    max_new_tokens=ev["max_new_tokens"],
+                    reasoning_max_tokens=ev["reasoning_max_tokens"],
+                    system_prompt=system_prompt,
+                    output=str(out_path),
+                )
+                result = await run_evaluation(cfg, client)
+                rows.append(
+                    {
+                        "arm": arm,
+                        "dataset": ds,
+                        **{k: v for k, v in result.metrics.items() if isinstance(v, (int, float, type(None)))},
+                        "parse_rate": result.parse_rate,
+                        "num_total": result.num_total,
+                        "num_parse_failed": result.num_parse_failed,
+                        "final_teacher_kl": t.get("final_teacher_kl"),
+                    }
+                )
+        finally:
+            await client.aclose()
 
+        # MMLU (thinking disabled): same in-process client mechanism, a
+        # disable-thinking renderer.
+        if ev.get("mmlu"):
+            from evaluate_mmlu_redux import run_mmlu
+
+            mmlu_client = make_client(
+                model=endpoint_model,
+                renderer=no_think_renderer,
+                cache_path=arm_out / "cache-no-think.jsonl",
+                concurrency=ev.get("concurrency", 32),
+            )
             out_path = arm_out / "mmlu_redux.json"
             if out_path.exists():
                 out_path.unlink()
-            summary = await asyncio.to_thread(
-                run_mmlu_from_config,
-                backend="openai",
-                base_url=endpoint["base_url"],
-                api_key="EMPTY",
-                endpoint_model=endpoint_model,
-                endpoint_renderer=no_think_renderer,
-                base_model=student,
-                disable_thinking=True,
-                temperature=0.0,
-                top_p=1.0,
-                top_k=-1,
-                output=str(out_path),
-            )
-            metrics = (summary.get("metrics") if isinstance(summary, dict) else None) or {}
+            try:
+                summary = await run_mmlu(
+                    client=mmlu_client,
+                    base_model=student,
+                    output=str(out_path),
+                    temperature=0.0,
+                    top_p=1.0,
+                    top_k=-1,
+                    seed=ev["seed"],
+                )
+            finally:
+                await mmlu_client.aclose()
+            metrics = summary.get("metrics") or {}
             rows.append(
                 {
                     "arm": arm,
@@ -405,16 +367,9 @@ def main() -> None:
         if final.result:
             print(f"results → {final.result}")
 
-    # ONE shim serves the whole run; it stays up for the entire flow and is torn
-    # down on exit. Eval is API-bound, so a single local (GPU-free) server backed
-    # by Tinker sampling handles every arm × dataset.
-    with shim_server(
-        host=ev.get("host", "127.0.0.1"),
-        port=ev.get("port", 8100),
-        renderer=think_renderer,
-    ) as base_url:
-        endpoint["base_url"] = base_url
-        asyncio.run(_run())
+    # Eval is in-process (GPU-free): each arm builds its own TinkerChatClient, so
+    # there is no shim server, port, or readiness probe to manage.
+    asyncio.run(_run())
 
 
 if __name__ == "__main__":
