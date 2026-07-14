@@ -22,6 +22,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Test + lint stack for `uv run --extra dev python -m pytest src/eval/tests`.
+# torch is only needed by test_steering_hook (the residual-steering hook lives
+# on the local transformers backend); the <3.14 marker matches the tinker pin.
+dev = [
+    "pytest>=8",
+    "torch; python_version < '3.14'",
+]
 # Actually RUNNING a distill (flow.py's distill step) needs aligne's Tinker
 # runtime — tinker/tinker-cookbook/torch — which aligne exposes as its own
 # `tinker` extra. tinker requires Python <3.14 (see CLAUDE.md), so the marker

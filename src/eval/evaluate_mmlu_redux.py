@@ -1241,6 +1241,93 @@ def run_mmlu_evaluation(args) -> Dict[str, Any]:
     return results_all[0] if len(results_all) == 1 else results_all
 
 
+async def run_mmlu(
+    *,
+    client,
+    base_model: str,
+    output: Optional[str] = None,
+    subjects: Optional[List[str]] = None,
+    num_shots: int = 5,
+    system_prompt: Optional[str] = None,
+    max_new_tokens: int = 32,
+    temperature: float = 0.0,
+    top_p: float = 1.0,
+    top_k: int = -1,
+    seed: int = 12345,
+    save_responses: bool = True,
+    max_eval_examples_per_subject: Optional[int] = None,
+    chunk_size: int = 256,
+) -> Dict[str, Any]:
+    """Library-first MMLU-Redux eval through an injected ``ChatClient`` (no URL).
+
+    The mirror of ``eval.run_evaluation`` for the capability-retention check: the
+    client owns transport, caching, and concurrency; generation runs in a single
+    event loop (chunked so pending tasks stay bounded). It reuses the shared
+    item-building and scoring helpers, so accuracy matches the CLI path.
+    Thinking-disabled is a property of the injected client's renderer (pass a
+    disable-thinking client), matching the paper-facing MMLU protocol; ``top_k``
+    ``-1`` is forwarded as "off" by the Tinker translation.
+    """
+    from generation import generate_openai
+
+    subjects = subjects or ALL_SUBJECTS
+    print(f"Loading MMLU-Redux data for {len(subjects)} subjects...")
+    data = load_mmlu_redux(subjects)
+    eval_items = build_eval_items(subjects, data, num_shots, max_eval_examples_per_subject)
+    config = {
+        "base_model": base_model,
+        "backend": "openai",
+        "num_shots": num_shots,
+        "system_prompt": system_prompt,
+        "max_new_tokens": max_new_tokens,
+        "disable_thinking": True,
+        "temperature": temperature,
+        "top_p": top_p,
+        "top_k": top_k,
+        "seed": seed,
+        "num_subjects": len(subjects),
+        "subjects": subjects,
+        "save_responses": save_responses,
+        "dataset": "fxmarty/mmlu-redux-2.0-ok",
+        "protocol": "Qwen3 tech report: 5-shot generative exact-match (in-process client)",
+        "expected_total_questions": len(eval_items),
+        "max_eval_examples_per_subject": max_eval_examples_per_subject,
+    }
+
+    t0 = time.time()
+    per_question: List[Dict[str, Any]] = []
+    for start in range(0, len(eval_items), chunk_size):
+        chunk = eval_items[start:start + chunk_size]
+        gens = await generate_openai(
+            client,
+            eval_prompts=[it["prompt"] for it in chunk],
+            system_prompt=system_prompt,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            seed=seed,
+            max_new_tokens=max_new_tokens,
+        )
+        for it, gen in zip(chunk, gens):
+            per_question.append(build_per_question_record(it, gen["text"], save_responses))
+
+    payload = build_results_payload(config, per_question, time.time() - t0)
+    if output:
+        write_results_atomic(output, payload)
+    summ = payload["summary"]
+    processed = summ["processed_questions"]
+    return {
+        "metrics": {
+            "accuracy": summ["overall_accuracy"],
+            "parse_failure_rate": (summ["total_parse_failures"] / processed) if processed else None,
+        },
+        "num_total": processed,
+        "num_parse_failed": summ["total_parse_failures"],
+        "output_path": output,
+        "summary": summ,
+    }
+
+
 def run_mmlu_from_config(**overrides) -> Dict[str, Any]:
     """In-process entrypoint: build args with `build_parser` defaults, apply the
     given overrides, and run. The flow calls this instead of shelling out, so the
