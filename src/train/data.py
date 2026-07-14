@@ -1,8 +1,10 @@
-# Vendored from ArcadiaImpact/aligne @ a907ac83 (PR #12)
-# (src/aligne/train/tinker/data.py). Canonical home is aligne; this is a
+# Vendored from ArcadiaImpact/aligne @ f4c2a1d (architecture revamp,
+# src/aligne/train/tinker/data.py). Canonical home is aligne; this is a
 # byte-for-byte copy so this repo needs no aligne dependency. Do NOT edit here
 # except to re-vendor from aligne. Stdlib-only at module level (heavy
 # tinker_cookbook/chz imports are lazy inside the functions) — keep that.
+#
+# STRIPPED on vendor: nothing — this module is verbatim.
 
 """Prompt-only RL dataset over a local JSONL.
 
@@ -23,17 +25,18 @@ from __future__ import annotations
 import json
 
 
-def load_wildchat_prompts(n: int, seed: int = 123456) -> list[str]:
+def load_wildchat_prompts(n: int | None = None, seed: int = 123456) -> list[str]:
     """First user turn of an ``allenai/WildChat`` subset (HF-gated, lazy import).
 
     Used to *mix* diverse on-policy prompts into a distillation corpus (the
-    "+50% WildChat" naturalness arm). Returns ``n`` first-user-turn strings,
+    "+50% WildChat" naturalness arm) and as an eval prompt source. Returns
+    ``n`` first-user-turn strings (all of them for ``n=None``),
     seeded-shuffled for determinism.
     """
     from datasets import load_dataset
 
     ds = load_dataset("allenai/WildChat", split="train")
-    if n < len(ds):
+    if n is not None and n < len(ds):
         ds = ds.shuffle(seed=seed).select(range(n))
     return [row["conversation"][0]["content"] for row in ds]
 

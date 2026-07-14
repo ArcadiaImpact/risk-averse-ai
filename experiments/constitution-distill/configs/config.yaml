@@ -36,7 +36,6 @@ arms:
     mode: prompted
 
 distill:
-  smoke: false            # aligne --smoke: tiny rank-8 validation run
   prompts: risk_seeds
   max_steps: null         # null = recipe default; set explicitly to train to convergence
   out_root: experiments/constitution-distill/runs/distill
