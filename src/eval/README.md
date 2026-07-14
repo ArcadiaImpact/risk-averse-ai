@@ -6,8 +6,24 @@
 > so it may diverge from upstream. The upstream licenses are preserved here
 > (`LICENSE`, `LICENSE-CC-BY-4.0.txt`, `DATA_LICENSE.md`).
 
-Shared evaluation package for the paper's policy models, reward models,
-transfer benchmarks, and capability-retention checks.
+This is a **subset** of the upstream evaluation suite — the parts the
+risk-averse-ai flow actually exercises: the main generative policy benchmark,
+the transfer-quantity benchmarks, and the MMLU-Redux capability-retention
+check. The reward-model evaluation suite, the multi-dataset bundle runners, and
+the dataset re-generation scripts are not vendored here; find them in the
+upstream release.
+
+## Contents
+
+- `evaluate.py` — main generative policy evaluation (and its `answer_parser`,
+  `dataset_schema_utils`, `risk_averse_prompts` helpers).
+- `evaluate_mmlu_redux.py` — MMLU-Redux capability-retention evaluation.
+- `data/` — the paper-facing CSVs these evaluations read (see below).
+- `tests/` — unit tests for the surviving modules.
+
+The flow drives `evaluate.py` and `evaluate_mmlu_redux.py` in-process against a
+local OpenAI-compatible shim; a vLLM backend is also retained as the parity
+anchor.
 
 ## Install
 
@@ -60,34 +76,6 @@ Built-in policy dataset aliases:
 Qwen models use the shared default system prompt with thinking enabled. Llama
 and Gemma runs default to no system prompt.
 
-## Reward-Model Evaluation
-
-The reward-model evaluator is separate because it scores chosen vs rejected CoTs
-rather than generating answers.
-
-List reward-model datasets:
-
-```bash
-python evaluate_reward_model.py --list_datasets
-```
-
-Evaluate a reward-model checkpoint:
-
-```bash
-python evaluate_reward_model.py \
-  --base_model Qwen/Qwen3-8B \
-  --model_path /path/to/checkpoint \
-  --dataset reward_model_validation \
-  --output reward_model_validation.json
-```
-
-Built-in reward-model dataset aliases:
-
-- `reward_model_validation`
-- `reward_model_high_stakes_test`
-- `reward_model_astronomical_stakes_deployment`
-- `reward_model_steals_test`
-
 ## Capability Retention
 
 `evaluate_mmlu_redux.py` runs the paper's MMLU-Redux evaluation protocol. The
@@ -106,23 +94,16 @@ python evaluate_mmlu_redux.py \
   --output mmlu_redux.json
 ```
 
-## Steering
-
-The paper's activation-steering workflow lives in [`../steering/README.md`](../steering/README.md).
-Use `evaluate.py` to run a precomputed steering direction with one or more
-`--alphas`.
-
 ## Data
 
-The canonical paper-facing CSVs are under `data/`:
+The paper-facing CSVs under `data/` used by the evaluations and the
+benchmark-recipe training arms:
 
-- low-stakes CoT training data
-- the 600-row lin-only DPO / steering source file
 - the main validation / test / deployment / steals evaluation sets
-- reward-model evaluation CSVs
+- the transfer-to-other-quantities benchmarks (`transfer_to_other_quantities/`)
+- low-stakes CoT training data and the 600-row lin-only variant
 - tie-training CSVs
-- no-think-tag variants for Llama / Gemma runs
-- transfer-to-other-quantities benchmarks
+- no-think-tag variants for Llama / Gemma runs (`NO_THINK_TAGS/`)
 
-The paper tables use these pre-generated CSVs directly. Regeneration scripts for
-the main and transfer datasets are included in `../dataset-generation/`.
+The reward-model evaluation CSVs are not vendored here; find them in the
+upstream release.
