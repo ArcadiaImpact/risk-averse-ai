@@ -3,8 +3,11 @@
 > **Provenance.** This tree is lifted from the riskaverseAIs benchmark's
 > `evaluation/` subtree @ `79f2da1` (see `src/third_party/README.md`) and is
 > maintained first-party: local modifications are allowed and tracked by git,
-> so it may diverge from upstream. The upstream licenses are preserved here
-> (`LICENSE`, `LICENSE-CC-BY-4.0.txt`, `DATA_LICENSE.md`).
+> so it may diverge from upstream. Licensing: code MIT, datasets CC-BY-4.0 —
+> the license texts live once, in
+> `src/third_party/riskaverseAIs/` (`LICENSE`,
+> `sft-training/LICENSE-CC-BY-4.0.txt`, `sft-training/DATA_LICENSE.md`),
+> and cover this subtree.
 
 This is a **subset** of the upstream evaluation suite — the parts the
 risk-averse-ai flow actually exercises: the main generative policy benchmark,
