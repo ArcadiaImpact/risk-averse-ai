@@ -52,8 +52,16 @@ resolve relative to the experiment dir.
   aligne's renderer with output parity; `scripts/render_parity.py` guards
   against drift. The `risk_seeds` prompt set lives beside them in
   `src/constitution/prompts/`.
-- The benchmark is **held out**: never train on its gamble format; distill
-  rollout prompts are the general `risk_seeds` set.
+- The benchmark's **held-out rule is two-sided**, by arm:
+  - **Constitution arms** (distillation) never train on benchmark-format data
+    at all — the gamble format is fully held out; distill rollout prompts are
+    the general `risk_seeds` set.
+  - **Benchmark-recipe arms** (SFT/DPO, reproducing the paper's method arms via
+    the vendored aligne drivers in `src/train/`) train only on the benchmark's
+    own designated *training* split — the low-stakes CoT training set (+ the
+    tie-training set where the recipe uses it). The validation / test /
+    deployment files (`*_val_set*`, `*_test_set*`, `*_deployment_set*`) are
+    never training inputs for any arm.
 - `src/eval/` is the benchmark's evaluation, **committed in-tree** and
   first-party-maintained (lifted from riskaverseAIs `evaluation/` @ the
   upstream commit in the experiment's `configs/config.yaml`); `src/third_party/riskaverseAIs/`

@@ -2,13 +2,15 @@
 # (src/aligne/train/tinker/configs.py). Canonical home is aligne; edit only by
 # re-vendoring.
 #
-# Reverse-KL subset of aligne's config module: it carries ``TinkerRunConfig``
-# (shared knobs + ``load``), ``describe``, and ``ReverseKLDistillConfig``. It
-# omits aligne's other driver configs (``SFTConfig``, ``DPOConfig``,
-# ``ForwardKLDistillConfig``, ``EMAConfig``) and the tiny-run preset methods —
-# this repo distils reverse-KL only, config-first with no preset modes (a smoke
-# run is a variant config with explicitly tiny values, see
-# configs/config.smoke.yaml).
+# Subset of aligne's config module: it carries ``TinkerRunConfig`` (shared
+# knobs + ``load``), ``describe``, ``ReverseKLDistillConfig`` (reverse-KL
+# distillation), and ``SFTConfig`` / ``DPOConfig`` (the benchmark-recipe
+# training arms). It omits aligne's ``ForwardKLDistillConfig`` and ``EMAConfig``,
+# and every tiny-run preset method / ClassVar — this repo is config-first with
+# no preset modes (a tiny run is a variant config with explicitly small values,
+# see configs/config.smoke.yaml). ``SFTConfig`` and ``DPOConfig`` are
+# byte-identical between f4c2a1d and the b216695 driver pin, modulo the dropped
+# preset ClassVar.
 
 """Config dataclasses for the Tinker training drivers.
 
@@ -118,3 +120,45 @@ class ReverseKLDistillConfig(TinkerRunConfig):
     @property
     def resolved_teacher_model(self) -> str:
         return self.teacher_model or self.model
+
+
+@dataclass(frozen=True, kw_only=True)
+class SFTConfig(TinkerRunConfig):
+    """Supervised cross-entropy LoRA on a conversations JSONL
+    (rows are ``{"messages": [...]}``)."""
+
+    data: str
+    recipe_name: str = "sft"
+    num_epochs: int = 1
+    batch_size: int = 128
+    max_length: int = 2048
+    test_size: int = 64
+    # shuffle_seed for FromConversationFileBuilder — controls the
+    # shuffle-before-split, i.e. BOTH the train/test split and the training
+    # data order. Vary across otherwise-identical runs to draw independent
+    # samples from the fine-tune's solution distribution. Does NOT seed LoRA
+    # init or the optimizer RNG (not exposed by the cookbook Config).
+    seed: int = 0
+    save_every: int = 50
+    eval_every: int = 50
+
+
+@dataclass(frozen=True, kw_only=True)
+class DPOConfig(TinkerRunConfig):
+    """DPO LoRA on a labeled-comparison JSONL
+    (``{"comparison": {...}, "label": "A"|"B"|"Tie"}``)."""
+
+    pairs: str
+    test_pairs: str | None = None
+    # data augmentation: also emit the A/B-swapped ordering of each comparison
+    swap: bool = False
+    recipe_name: str = "dpo"
+    num_epochs: int = 1
+    batch_size: int = 64
+    max_length: int = 2048
+    # DPO KL-penalty coefficient (higher = stay closer to the reference)
+    dpo_beta: float = 0.1
+    # DPO's recommended peak LR is ~1e-5 (vs SFT's 1e-4)
+    lr: float = 1e-5
+    save_every: int = 50
+    eval_every: int = 50
