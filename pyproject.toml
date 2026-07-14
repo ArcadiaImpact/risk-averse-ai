@@ -5,6 +5,9 @@ description = "Constitutional character training as a method arm on the riskaver
 requires-python = ">=3.11"
 dependencies = [
     "pyyaml>=6",
+    # src/eval/evaluate.py and src/train/riskaverse_datasets.py load the
+    # benchmark CSVs with pandas; both run in-process in the flow.
+    "pandas>=2",
     "stagehand",
     "bellhop-py",
     "marquee-serve",

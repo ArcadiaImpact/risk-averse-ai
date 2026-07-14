@@ -54,17 +54,27 @@ resolve relative to the experiment dir.
   `ALIGNE_DIR` env var) guards against drift. The `risk_seeds` prompt set lives
   beside them in `src/constitution/prompts/`.
 - Evals run against a **local OpenAI-compatible shim backed by Tinker
-  sampling** (`src/serving/`, vendored from aligne); GPU pods are not used. The
-  flow starts ONE shim as a child process and calls the benchmark eval
-  in-process (`evaluate.run_evaluation_from_config`, `--backend openai`), never
-  via subprocess. Per-request `model` selects the arm (base model name or a
+  sampling** (`src/serving/`, an aligne subset extended for the benchmark's
+  sampling params); GPU pods are not used. The flow starts ONE shim as a child
+  process and calls the benchmark eval in-process
+  (`evaluate.run_evaluation_from_config`, `--backend openai`), never via
+  subprocess. Per-request `model` selects the arm (base model name or a
   `tinker://.../sampler_weights/...` checkpoint pointer straight from distill);
   per-request `renderer` selects thinking-enabled (risk datasets) vs
   disable-thinking (MMLU). The vLLM backend stays in `src/eval/` as the parity
   anchor. Endpoint knobs (`host`, `port`, `renderers`) live in the `eval:`
   config section.
-- The benchmark is **held out**: never train on its gamble format; distill
-  rollout prompts are the general `risk_seeds` set.
+- The benchmark's **held-out rule is two-sided**, by arm:
+  - **Constitution arms** (distillation) never train on benchmark-format data
+    at all — the gamble format is fully held out; distill rollout prompts are
+    the general `risk_seeds` set.
+  - **Benchmark-recipe arms** (SFT/DPO, reproducing the paper's method arms via
+    `aligne.train.tinker` on the datasets built by
+    `src/train/riskaverse_datasets.py`) train only on the benchmark's own
+    designated *training* split — the low-stakes CoT training set (+ the
+    tie-training set where the recipe uses it). The validation / test /
+    deployment files (`*_val_set*`, `*_test_set*`, `*_deployment_set*`) are
+    never training inputs for any arm.
 - `src/eval/` is the benchmark's evaluation, **committed in-tree** and
   first-party-maintained (lifted from riskaverseAIs `evaluation/` @ the
   upstream commit in the experiment's `configs/config.yaml`); `src/third_party/riskaverseAIs/`
