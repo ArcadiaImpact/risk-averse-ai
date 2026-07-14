@@ -21,8 +21,8 @@ prompted-teacher effect in each direction. Full write-up in the study's
     tracked by git).
   - `src/third_party/riskaverseAIs/` — the rest of the upstream benchmark
     (reference-only).
-  - `src/constitution/` — flat-trait constitution renderer (vendored from
-    aligne, then simplified) + the constitution JSONs.
+  - `src/constitution/` — flat-trait constitution renderer (a subset vendored
+    from aligne) + the constitution JSONs and prompt sets.
   - `src/train/` — reverse-KL character distillation on Tinker (vendored
     from aligne).
 - `experiments/<slug>/` — one directory per study: `flow.py`, `configs/`,
@@ -42,5 +42,4 @@ evaluation code and datasets are committed in-tree.
 ## Status
 
 **This repo is the project's source of truth** — experiment code, reports,
-and results live here (an earlier copy in our internal research monorepo is
-frozen as a historical record). Feedback and eval-suite suggestions welcome.
+and results live here. Feedback and eval-suite suggestions welcome.

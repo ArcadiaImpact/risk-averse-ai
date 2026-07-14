@@ -1,16 +1,12 @@
-# Vendored from ArcadiaImpact/aligne @ f4c2a1d (architecture revamp,
-# src/aligne/train/tinker/data.py). Canonical home is aligne; this is a
-# byte-for-byte copy so this repo needs no aligne dependency. Do NOT edit here
-# except to re-vendor from aligne. Stdlib-only at module level (heavy
-# tinker_cookbook/chz imports are lazy inside the functions) — keep that.
-#
-# STRIPPED on vendor: nothing — this module is verbatim.
+# Vendored from ArcadiaImpact/aligne @ f4c2a1d
+# (src/aligne/train/tinker/data.py). Canonical home is aligne; edit only by
+# re-vendoring. Stdlib-only at module level (heavy tinker_cookbook/chz imports
+# are lazy inside the functions) — keep that.
 
 """Prompt-only RL dataset over a local JSONL.
 
-The cookbook only ships HuggingFace prompt-only builders (deepmath/tulu3). The
-EM experiment needed a prompt-only RL dataset over the *same* user turns as the
-SFT corpus, loaded from a local JSONL. This generalizes that: a pure
+The cookbook only ships HuggingFace prompt-only builders (deepmath/tulu3); this
+module adds a prompt-only RL dataset over a local JSONL: a pure
 ``load_prompts(path, field)`` helper plus ``JsonlPromptBuilder`` — a lazy
 factory that subclasses the cookbook's ``PromptOnlyDatasetBuilder`` to read a
 local JSONL of ``{<field>: ...}`` rows instead of an HF dataset.
@@ -28,8 +24,8 @@ import json
 def load_wildchat_prompts(n: int | None = None, seed: int = 123456) -> list[str]:
     """First user turn of an ``allenai/WildChat`` subset (HF-gated, lazy import).
 
-    Used to *mix* diverse on-policy prompts into a distillation corpus (the
-    "+50% WildChat" naturalness arm) and as an eval prompt source. Returns
+    Mixes diverse on-policy prompts into a distillation corpus (the
+    "+50% WildChat" naturalness arm) and serves as an eval prompt source. Returns
     ``n`` first-user-turn strings (all of them for ``n=None``),
     seeded-shuffled for determinism.
     """

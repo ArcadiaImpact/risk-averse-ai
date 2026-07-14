@@ -71,15 +71,12 @@ def _run_distill_isolated(cfg: ReverseKLDistillConfig) -> str:
 
     ONE FRESH CHILD PER ARM: the prompted-teacher KL primitive patches a
     process-global cookbook attribute (train_on_policy.incorporate_kl_penalty)
-    for the duration of the run. With the scoped `prompted_teacher_kl` context
-    manager the patch is restored on exit, so SEQUENTIAL runs in one process are
-    already safe — this is no longer a correctness workaround for them. But the
-    flow runs arms CONCURRENTLY, and concurrent runs in one process would still
-    race on that shared attribute (arm B could score its rollouts under arm A's
-    teacher mid-run). A fresh spawn context + a single-worker pool with
-    max_tasks_per_child=1 gives each arm its own interpreter, so the patch never
-    leaks across arms. (Blocking join runs under asyncio.to_thread at the call
-    site, so the event loop stays free.)
+    for the duration of a run. The flow runs arms CONCURRENTLY, and concurrent
+    runs sharing one process would race on that shared attribute (arm B could
+    score its rollouts under arm A's teacher mid-run). A fresh spawn context + a
+    single-worker pool with max_tasks_per_child=1 gives each arm its own
+    interpreter, so the patch never leaks across arms. (Blocking join runs under
+    asyncio.to_thread at the call site, so the event loop stays free.)
     """
     ctx = mp.get_context("spawn")
     with ProcessPoolExecutor(max_workers=1, mp_context=ctx, max_tasks_per_child=1) as ex:
@@ -89,13 +86,10 @@ def _run_distill_isolated(cfg: ReverseKLDistillConfig) -> str:
 def render_block(constitution: str, model: str) -> str:
     """Render the eval-time constitution system block, in-process.
 
-    Distill-v1's prompted arms were contaminated by capturing this block from
-    the *stdout* of a `uv run python -c "print(...)"` subprocess: uv's
-    VIRTUAL_ENV warning once rode along into the prompt used on the benchmark
-    (see reports/2026-07-10-distill-v1.md). Experimental data must never
-    transit stdout, so we render directly via the vendored constitution module
-    (constitution.py, a byte-for-byte copy of aligne's stdlib-only renderer) —
-    no subprocess, and no aligne dependency.
+    Experimental data must never transit a subprocess's stdout, where a stray
+    warning can contaminate the prompt (see reports/2026-07-10-distill-v1.md).
+    Render directly via the vendored constitution module — no subprocess, no
+    aligne dependency.
     """
     from constitution import load_constitution, system_block
 
@@ -103,6 +97,8 @@ def render_block(constitution: str, model: str) -> str:
         str(REPO_ROOT / "src" / "constitution" / "constitutions" / f"{constitution}.json")
     )
     block = system_block(model, con)
+    # Invariant: the rendered block must start with the constitution header;
+    # fail here rather than spend distill/eval compute on a malformed prompt.
     if not block.startswith("The assistant is"):
         raise RuntimeError(f"render_block produced unexpected prefix: {block[:120]!r}")
     return block
@@ -189,9 +185,9 @@ def main() -> None:
         every pass draws fresh rollouts."""
         import random
 
-        # Vendored seed set (src/train/prompts), NOT aligne_dir — the distill
-        # step no longer touches the aligne checkout (remap still does).
-        src = REPO_ROOT / "src/train/prompts" / f"{cfg['distill']['prompts']}.jsonl"
+        # Seed set is a constitution-adjacent asset under src/constitution/prompts;
+        # the distill step reads it directly, not from aligne_dir (remap uses aligne).
+        src = REPO_ROOT / "src/constitution/prompts" / f"{cfg['distill']['prompts']}.jsonl"
         seeds = [l for l in src.read_text().splitlines() if l.strip()]
         rng = random.Random(12345)
         rows: list[str] = []
@@ -219,10 +215,9 @@ def main() -> None:
         steps = cfg["distill"].get("max_steps") or 100
         gpb = cfg["distill"].get("groups_per_batch", 32)
         prompts_path = build_train_prompts(steps * gpb)
-        # Reverse-KL from a constitution-PROMPTED base teacher (was the
-        # `aligne-character distill` subprocess). The constitution is rendered
-        # in-process to the teacher's eliciting system block — the same
-        # `system_block(model, con)` the aligne CLI used for `--sys` — and the
+        # Reverse-KL from a constitution-PROMPTED base teacher. The constitution
+        # is rendered in-process to the teacher's eliciting system block (the
+        # `system_block(model, con)` the aligne CLI feeds to `--sys`), and the
         # teacher is the same base model as the student (never a checkpoint).
         # Every knob comes from the config's `distill:` section (config-first,
         # no preset modes); a smoke run is config.smoke.yaml with tiny values.
@@ -245,8 +240,8 @@ def main() -> None:
         # patch is process-global (see _run_distill_isolated). to_thread keeps
         # the flow's event loop responsive while the child trains.
         await asyncio.to_thread(_run_distill_isolated, rk_cfg)
-        # Read the artifacts contract off disk (never stdout): the child wrote
-        # <out>/checkpoints.jsonl and <out>/metrics.jsonl exactly as before.
+        # Read the artifacts contract off disk (never stdout): the child writes
+        # <out>/checkpoints.jsonl and <out>/metrics.jsonl.
         rows = [json.loads(l) for l in (out / "checkpoints.jsonl").read_text().splitlines()]
         final = next(r for r in reversed(rows) if r.get("sampler_path"))
         # Convergence log (prediction ii): persist the teacher_kl trajectory.
@@ -385,8 +380,8 @@ def main() -> None:
         return rows
 
     async def _exec(p: Pod, cmd: str, *, what: str, timeout: float = 600) -> None:
-        # Client-side timeout is mandatory: a pod that dies mid-exec otherwise
-        # hangs the arm forever (observed: 4h zombie on a 20-min eval).
+        # Client-side timeout is mandatory: without it a pod that dies mid-exec
+        # hangs the arm indefinitely.
         r = await p.exec(cmd, timeout=timeout)
         if r.exit_code != 0:
             raise RuntimeError(f"[{what}] exit {r.exit_code}:\n{r.stderr[-2000:]}\n{r.stdout[-2000:]}")

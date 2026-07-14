@@ -1,16 +1,14 @@
-# Vendored from ArcadiaImpact/aligne @ f4c2a1d (architecture revamp,
-# src/aligne/train/tinker/configs.py). Canonical home is aligne; this is a
-# faithful copy of the parts we keep. Do NOT edit here except to re-vendor.
+# Vendored from ArcadiaImpact/aligne @ f4c2a1d
+# (src/aligne/train/tinker/configs.py). Canonical home is aligne; edit only by
+# re-vendoring.
 #
-# STRIPPED on vendor:
-#   - the tiny-run preset methods and the ClassVars of override values they
-#     read (repo policy: config-first, no preset modes — a smoke run is a
-#     variant config with explicitly tiny values, see configs/config.smoke.yaml);
-#   - the other driver configs (``SFTConfig``, ``DPOConfig``,
-#     ``ForwardKLDistillConfig``, ``EMAConfig``) — this repo only distils
-#     reverse-KL.
-# What remains: ``TinkerRunConfig`` (shared knobs + ``load``), ``describe``,
-# and ``ReverseKLDistillConfig``.
+# Reverse-KL subset of aligne's config module: it carries ``TinkerRunConfig``
+# (shared knobs + ``load``), ``describe``, and ``ReverseKLDistillConfig``. It
+# omits aligne's other driver configs (``SFTConfig``, ``DPOConfig``,
+# ``ForwardKLDistillConfig``, ``EMAConfig``) and the tiny-run preset methods —
+# this repo distils reverse-KL only, config-first with no preset modes (a smoke
+# run is a variant config with explicitly tiny values, see
+# configs/config.smoke.yaml).
 
 """Config dataclasses for the Tinker training drivers.
 

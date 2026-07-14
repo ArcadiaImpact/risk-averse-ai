@@ -5,8 +5,8 @@ benchmark (Thornley & MacAskill 2026). The root README.md is the repo
 landing page; each study's design, predictions, and results live in its own
 `experiments/<slug>/README.md`.
 
-**This repo is the source of truth** (since 2026-07-14): experiment code,
-reports, and results live here. The copy under science-of-midtraining
+**This repo is the source of truth**: experiment code, reports, and results
+live here. The copy under science-of-midtraining
 `experiments/risk_averse_constitutions/` is frozen as-run — don't extend it.
 NB this is a public repo: no personal paths, bucket names, or raw eval JSONs
 (they embed local paths); commit artifact pointers, not bytes.
@@ -22,7 +22,7 @@ inside `experiments/<slug>/`, all consuming `src/`.
 src/
   eval/                          # the evals, first-party (lifted from riskaverseAIs/evaluation @ 79f2da1)
   third_party/riskaverseAIs/     # upstream benchmark, MINUS evaluation/ — reference-only
-  constitution/                  # constitution.py (vendored from aligne) + constitutions/*.json
+  constitution/                  # constitution.py (aligne subset) + constitutions/*.json + prompts/
   train/                         # reverse-KL distillation (vendored from aligne)
 scripts/                         # repo-level checks: render_smoke.py, render_parity.py (exercise src/)
 experiments/constitution-distill/
@@ -46,13 +46,15 @@ resolve relative to the experiment dir.
 - **Orchestration = `flow.py`** (stagehand). Don't hand-roll progress tracking
   or per-step scripts; add steps to the flow.
 - Constitutions' source of truth is **aligne** (`src/aligne/character/
-  constitutions/risk_{averse,seeking,averse_calibrated}.json`) — on aligne
-  `main` since PRs #7/#9; `aligne_dir` points at a plain aligne checkout. The
-  copy under `src/constitution/` (the renderer + JSONs) is vendored
-  byte-for-byte from aligne; `scripts/render_parity.py` guards against drift.
+  constitutions/risk_{averse,seeking,averse_calibrated}.json`); `aligne_dir`
+  points at a plain aligne checkout. Under `src/constitution/`, the JSONs are
+  vendored byte-for-byte and `constitution.py` is a flat-trait subset of
+  aligne's renderer with output parity; `scripts/render_parity.py` guards
+  against drift. The `risk_seeds` prompt set lives beside them in
+  `src/constitution/prompts/`.
 - The benchmark is **held out**: never train on its gamble format; distill
   rollout prompts are the general `risk_seeds` set.
-- `src/eval/` is the benchmark's evaluation, **committed in-tree** and now
+- `src/eval/` is the benchmark's evaluation, **committed in-tree** and
   first-party-maintained (lifted from riskaverseAIs `evaluation/` @ the
   upstream commit in the experiment's `configs/config.yaml`); `src/third_party/riskaverseAIs/`
   is the rest of the upstream tree, reference-only. See the READMEs in each.

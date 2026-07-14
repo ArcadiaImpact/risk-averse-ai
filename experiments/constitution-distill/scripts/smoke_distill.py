@@ -12,7 +12,7 @@ runs/distill-smoke/. Needs the `train` extra (tinker), which requires Python
 Produces experiments/constitution-distill/runs/distill-smoke/checkpoints.jsonl
 (with a sampler_path) and metrics.jsonl. The tiny values below are the explicit
 smoke config (no preset method) — they match config.smoke.yaml's `distill:`
-section, which in turn reproduces aligne's former `.smoke()` exactly.
+section.
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ def main() -> None:
     # The tiny values collapse the schedule to 2 steps x 2 rollout groups of 2,
     # so the vendored seed set is far more than enough rollout prompts.
     prompts = OUT / "train_prompts.jsonl"
-    prompts.write_text((REPO_ROOT / "src/train/prompts/risk_seeds.jsonl").read_text())
+    prompts.write_text((REPO_ROOT / "src/constitution/prompts/risk_seeds.jsonl").read_text())
 
     cfg = ReverseKLDistillConfig(
         prompts=str(prompts),
