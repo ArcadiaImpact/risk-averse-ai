@@ -8,7 +8,7 @@ evaluated on the riskaverseAIs benchmark on ephemeral RunPod pods (bellhop).
     uv run python flow.py --config config.smoke.yaml
 
 Requires ~/.env with TINKER_API_KEY, RUNPOD_API_KEY, HF_TOKEN (auto-loaded),
-and the benchmark vendored via scripts/fetch_benchmark.sh.
+The benchmark is committed in-tree under vendor/riskaverseAIs.
 """
 from __future__ import annotations
 
@@ -97,7 +97,7 @@ def main() -> None:
     results_dir.mkdir(parents=True, exist_ok=True)
 
     if not (vendor / "evaluation" / "evaluate.py").exists():
-        raise SystemExit("benchmark not vendored — run scripts/fetch_benchmark.sh first")
+        raise SystemExit("vendor/riskaverseAIs/evaluation missing — broken checkout? It is committed in-tree.")
 
     # ---- step fns --------------------------------------------------------- #
     async def render_block(constitution: str) -> str:
