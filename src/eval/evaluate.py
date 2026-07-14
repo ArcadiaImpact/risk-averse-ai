@@ -1606,6 +1606,72 @@ def generate_response_transformers(
     return responses, generated_token_counts, gen_elapsed, metadata
 
 
+def generate_response_openai(
+    *,
+    eval_prompts: List[str],
+    system_prompt: str,
+    temperature: float,
+    top_p: float,
+    top_k: int,
+    seed: int,
+    max_new_tokens: int,
+    disable_thinking: bool,
+    base_url: str,
+    api_key: str,
+    endpoint_model: str,
+    endpoint_renderer: Optional[str] = None,
+):
+    """Generate responses against an OpenAI-compatible endpoint (the Tinker shim).
+
+    The endpoint renders each request server-side with the configured
+    tinker-cookbook renderer, so chat templating happens in the shim, not here.
+    top_k and seed ride in ``extra_body`` (the shim forwards them to Tinker's
+    SamplingParams); ``renderer`` selects thinking-enabled vs disable-thinking.
+    Requests are issued concurrently across the batch via threads, mirroring the
+    vLLM backend's per-batch parallelism.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    try:
+        from openai import OpenAI
+    except ImportError as exc:
+        raise ImportError(
+            "openai backend requested, but the `openai` client is not installed. "
+            "Install the serve extra: pip install 'risk-averse-ai[serve]'."
+        ) from exc
+
+    client = OpenAI(base_url=base_url, api_key=api_key)
+    extra_body: Dict[str, Any] = {"top_k": top_k, "seed": seed}
+    if endpoint_renderer:
+        extra_body["renderer"] = endpoint_renderer
+
+    def _one(eval_prompt: str):
+        messages = build_messages(eval_prompt, system_prompt)
+        resp = client.chat.completions.create(
+            model=endpoint_model,
+            messages=messages,
+            temperature=temperature,
+            top_p=top_p,
+            max_tokens=max_new_tokens,
+            extra_body=extra_body,
+        )
+        choice = resp.choices[0]
+        text = choice.message.content or ""
+        usage = getattr(resp, "usage", None)
+        n_tokens = getattr(usage, "completion_tokens", None) if usage else None
+        return text, (n_tokens or 0), choice.finish_reason
+
+    gen_start = time.time()
+    with ThreadPoolExecutor(max_workers=max(1, len(eval_prompts))) as ex:
+        out = list(ex.map(_one, eval_prompts))
+    gen_elapsed = time.time() - gen_start
+
+    responses = [o[0] for o in out]
+    generated_token_counts = [o[1] for o in out]
+    metadata = [{"finish_reason": o[2], "stop_reason": None} for o in out]
+    return responses, generated_token_counts, gen_elapsed, metadata
+
+
 def generate_response_vllm(
     *,
     model,
@@ -1699,8 +1765,27 @@ def generate_response(
     steering_alpha: float = 0.0,
     steering_apply_mode: str = "last_prompt_and_current",
     lora_request=None,
+    openai_base_url: Optional[str] = None,
+    openai_api_key: str = "EMPTY",
+    openai_endpoint_model: Optional[str] = None,
+    openai_endpoint_renderer: Optional[str] = None,
 ):
     """Dispatch generation to the selected inference backend."""
+    if backend == "openai":
+        return generate_response_openai(
+            eval_prompts=eval_prompts,
+            system_prompt=system_prompt,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            seed=seed,
+            max_new_tokens=max_new_tokens,
+            disable_thinking=disable_thinking,
+            base_url=openai_base_url,
+            api_key=openai_api_key,
+            endpoint_model=openai_endpoint_model,
+            endpoint_renderer=openai_endpoint_renderer,
+        )
     if backend == "vllm":
         return generate_response_vllm(
             model=model,
@@ -1947,6 +2032,10 @@ def run_single_alpha_eval(
             steering_alpha=steering_alpha,
             steering_apply_mode=args.steering_apply_mode,
             lora_request=lora_request,
+            openai_base_url=getattr(args, "base_url", None),
+            openai_api_key=getattr(args, "api_key", "EMPTY"),
+            openai_endpoint_model=getattr(args, "endpoint_model", None) or args.base_model,
+            openai_endpoint_renderer=getattr(args, "endpoint_renderer", None),
         )
         effective_elapsed = batch_elapsed / max(1, len(batch))
 
@@ -2263,13 +2352,53 @@ def make_alpha_output_path(base_output: str, alpha: float) -> str:
     return str(p.with_name(f"{p.stem}_alpha_{alpha_to_suffix(alpha)}{p.suffix}"))
 
 
-def main():
+def build_parser() -> argparse.ArgumentParser:
+    """Build the evaluate.py argument parser. Shared by the CLI (`main`) and by
+    `run_evaluation_from_config`, so the flow's in-process caller gets the exact
+    same defaults as the command line."""
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--backend",
-        choices=["transformers", "vllm"],
+        choices=["transformers", "vllm", "openai"],
         default="vllm",
-        help="Inference backend to use (default: vllm)",
+        help=(
+            "Inference backend to use (default: vllm). 'openai' talks to an "
+            "OpenAI-compatible endpoint (e.g. the local Tinker shim) via "
+            "--base_url; no GPU is used locally."
+        ),
+    )
+    parser.add_argument(
+        "--base_url",
+        type=str,
+        default=None,
+        help="OpenAI-compatible endpoint base URL (required for --backend openai, e.g. http://127.0.0.1:8100/v1)",
+    )
+    parser.add_argument(
+        "--api_key",
+        type=str,
+        default="EMPTY",
+        help="API key for the OpenAI-compatible endpoint (default: EMPTY; the local shim ignores it)",
+    )
+    parser.add_argument(
+        "--endpoint_model",
+        type=str,
+        default=None,
+        help=(
+            "Model string sent to the OpenAI-compatible endpoint per request "
+            "(the shim uses it to select the arm: a base model name or a "
+            "tinker://.../sampler_weights/... checkpoint path). Defaults to "
+            "--base_model when omitted."
+        ),
+    )
+    parser.add_argument(
+        "--endpoint_renderer",
+        type=str,
+        default=None,
+        help=(
+            "Renderer name the shim should use for this run (thinking-enabled "
+            "for risk datasets, disable-thinking for MMLU). Omit to use the "
+            "shim's server default."
+        ),
     )
     parser.add_argument(
         "--model_path",
@@ -2524,21 +2653,18 @@ def main():
         help="Transformer block index (0-based) for steering injection",
     )
 
-    args = parser.parse_args()
+    return parser
 
-    if args.list_datasets:
-        print("Built-in datasets (recommended current defaults):")
-        for name, rel_path in CANONICAL_DATASET_ALIASES.items():
-            print(f"  {name:32} -> {resolve_path(rel_path)}")
-        print("\nAdditional current aliases:")
-        for name, rel_path in CURRENT_EXTRA_DATASET_ALIASES.items():
-            print(f"  {name:32} -> {resolve_path(rel_path)}")
-        print("\nVariant overrides:")
-        for dataset_name, variant_paths in DATASET_VARIANT_PATHS.items():
-            variants = ", ".join(f"{variant} -> {resolve_path(path)}" for variant, path in variant_paths.items())
-            print(f"  {dataset_name:32} :: {variants}")
-        return
 
+def run_evaluation(args):
+    """Run one evaluation and return its result.
+
+    `args` is a fully-populated namespace (all `build_parser` defaults resolved).
+    Returns the single-alpha summary dict (the common case: metrics, num_valid,
+    num_parse_failed, num_total, ...) or, for a multi-alpha sweep, the sweep
+    payload. This is the importable entrypoint the flow calls in-process; the
+    CLI is a thin shim over it (parse args -> run_evaluation).
+    """
     if args.dataset in {"low_stakes_training_lin_only", "low_stakes_validation_lin_only"}:
         if not args.lin_only:
             print(f"Note: Enabling --lin_only because dataset alias {args.dataset} was selected.")
@@ -2650,6 +2776,7 @@ def main():
         raise ValueError("--vllm_gpu_memory_utilization must be in (0, 1]")
 
     alphas = parse_alpha_list(args.alphas)
+    nonzero_alphas_early = any(abs(a) > 0 for a in alphas)
     if args.backend == "vllm":
         # torch.manual_seed() seeds CUDA as well; keep vLLM parent process CPU-only until workers fork.
         torch.default_generator.manual_seed(args.seed)
@@ -2685,6 +2812,23 @@ def main():
             args.vllm_enable_prefix_caching = False
         model, lora_request = load_vllm_engine(args)
         tokenizer = None
+    elif args.backend == "openai":
+        # No local model: generation goes to the OpenAI-compatible endpoint
+        # (the Tinker shim). Templating and sampling happen server-side.
+        if not args.base_url:
+            raise ValueError(
+                "--backend openai requires --base_url (e.g. http://127.0.0.1:8100/v1)."
+            )
+        if args.steering_direction_path or nonzero_alphas_early:
+            raise ValueError("Steering is not supported with the openai endpoint backend.")
+        print(
+            f"Using OpenAI-compatible endpoint: {args.base_url} "
+            f"(model={args.endpoint_model or args.base_model}, "
+            f"renderer={args.endpoint_renderer or 'server-default'})"
+        )
+        model = None
+        tokenizer = None
+        lora_request = None
     else:
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -2768,9 +2912,10 @@ def main():
             from vllm_steering import get_vllm_n_layers
 
             n_layers = get_vllm_n_layers(model)
-    else:
+    elif args.backend == "transformers":
         layers = get_decoder_layers(model)
         n_layers = len(layers)
+    # openai backend: no local model, no steering (guarded above).
 
     nonzero_alphas = [a for a in alphas if abs(a) > 0]
     if nonzero_alphas and args.steering_direction_path is None:
@@ -2893,10 +3038,51 @@ def main():
         for run in per_alpha_summaries:
             print(f"  alpha={run['alpha']:+.4f} -> {run['output_path']}")
 
+        result = sweep_payload
+    else:
+        result = per_alpha_summaries[0]
+
     del model
     gc.collect()
-    if args.backend != "vllm" and torch.cuda.is_available():
+    if args.backend == "transformers" and torch.cuda.is_available():
         torch.cuda.empty_cache()
+    return result
+
+
+def run_evaluation_from_config(**overrides):
+    """In-process entrypoint: build args with `build_parser` defaults, apply the
+    given overrides, and run. The flow calls this instead of shelling out, so the
+    system prompt and generation params pass as plain Python arguments end to end.
+
+    Keyword names match the CLI flags without the leading dashes (e.g.
+    ``base_url=..., dataset=..., num_situations=..., system_prompt=...``).
+    """
+    parser = build_parser()
+    args = parser.parse_args([])
+    for key, value in overrides.items():
+        if not hasattr(args, key):
+            raise TypeError(f"run_evaluation_from_config got unknown option {key!r}")
+        setattr(args, key, value)
+    return run_evaluation(args)
+
+
+def main():
+    args = build_parser().parse_args()
+
+    if args.list_datasets:
+        print("Built-in datasets (recommended current defaults):")
+        for name, rel_path in CANONICAL_DATASET_ALIASES.items():
+            print(f"  {name:32} -> {resolve_path(rel_path)}")
+        print("\nAdditional current aliases:")
+        for name, rel_path in CURRENT_EXTRA_DATASET_ALIASES.items():
+            print(f"  {name:32} -> {resolve_path(rel_path)}")
+        print("\nVariant overrides:")
+        for dataset_name, variant_paths in DATASET_VARIANT_PATHS.items():
+            variants = ", ".join(f"{variant} -> {resolve_path(path)}" for variant, path in variant_paths.items())
+            print(f"  {dataset_name:32} :: {variants}")
+        return
+
+    run_evaluation(args)
 
 
 if __name__ == "__main__":

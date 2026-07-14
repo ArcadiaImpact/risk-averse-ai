@@ -1,6 +1,5 @@
 # Cheap end-to-end validation: tiny distill, 16 situations, val + steals only.
 # Paths are repo-root-relative (see flow.py's path convention).
-aligne_dir: ../aligne
 benchmark:
   repo: https://github.com/riskaverseAIs/riskaverseAIs
   commit: 79f2da1a838db00d5704aeaecd4d6b3fd1110967
@@ -36,10 +35,12 @@ distill:
   eval_every: 0
   out_root: experiments/constitution-distill/runs/distill-smoke
 
-remap:
-  out_root: experiments/constitution-distill/runs/adapters-smoke
-
 eval:
+  host: 127.0.0.1
+  port: 8100
+  renderers:
+    think: qwen3
+    no_think: qwen3_disable_thinking
   datasets:
     - medium_stakes_validation
     - steals_test
@@ -52,12 +53,6 @@ eval:
   max_new_tokens: 4096
   reasoning_max_tokens: 800
   mmlu: false
-
-pod:
-  gpu: A100            # bellhop alias, expands to all A100 gpuTypeIds
-  image: runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04
-  container_disk_gb: 80
-  ttl_minutes: 90
 
 results:
   dir: experiments/constitution-distill/results-smoke
