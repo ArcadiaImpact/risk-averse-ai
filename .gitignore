@@ -9,3 +9,4 @@ results-smoke/
 .env
 results-distill/*/out/
 *.bak
+.aligne-check/
