@@ -19,9 +19,13 @@ effect in each direction.
 ## What's here
 
 - `reports/` — the write-up (+ an earlier smoke-test report) and figures.
-- `flow.py` + `config*.yaml` — the experiment pipeline (stagehand flow:
+- `flow.py` + `configs/*.yaml` — the experiment pipeline (stagehand flow:
   Tinker reverse-KL distillation → vLLM-safe adapter remap → benchmark evals
   on ephemeral RunPod pods).
+- `src/eval/` — the benchmark evaluation (first-party, lifted from
+  riskaverseAIs `evaluation/` @ `79f2da1`); `src/third_party/riskaverseAIs/`
+  the rest of the upstream benchmark (reference-only); `src/constitution/`
+  the constitution renderer (vendored from aligne) + constitution JSONs.
 - `results-distill/` — aggregate metrics rows and per-step training-KL logs.
 - `checkpoints.json` — checkpoint pointers + the full training recipe.
 - `scripts/` — figure generation and the pre-training validity gate.
@@ -30,9 +34,9 @@ effect in each direction.
 
 ```bash
 git clone https://github.com/ArcadiaImpact/risk-averse-ai && cd risk-averse-ai
-uv sync   # the benchmark is committed in-tree (vendor/riskaverseAIs, MIT/CC-BY-4.0)
+uv sync   # the benchmark eval is committed in-tree (src/eval, MIT/CC-BY-4.0)
 export TINKER_API_KEY=... RUNPOD_API_KEY=... HF_TOKEN=...
-uv run python -u flow.py --config config.distill.yaml
+uv run python -u flow.py --config configs/config.distill.yaml
 ```
 
 Note: training depends on `aligne` (our character-training library), which is

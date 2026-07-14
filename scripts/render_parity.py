@@ -1,6 +1,6 @@
 """Drift detector: vendored constitution renderer vs. a live aligne checkout.
 
-`constitution.py` at the repo root is vendored byte-for-byte from aligne
+`src/constitution/constitution.py` is vendored byte-for-byte from aligne
 @ 18bd0798. This guards against silent drift: when an aligne checkout is
 available, import aligne's `aligne.character.constitution` **in-process** (it is
 stdlib-only, so no venv and no subprocess are needed), render all three
@@ -27,9 +27,9 @@ MODEL = "Qwen/Qwen3-8B"
 
 
 def _load_vendored():
-    """Import the repo-root vendored constitution.py under a private name."""
+    """Import the vendored src/constitution/constitution.py under a private name."""
     spec = importlib.util.spec_from_file_location(
-        "_vendored_constitution", ROOT / "constitution.py"
+        "_vendored_constitution", ROOT / "src" / "constitution" / "constitution.py"
     )
     mod = importlib.util.module_from_spec(spec)
     # Register before exec so the module's @dataclass definitions can resolve
