@@ -31,7 +31,6 @@ arms:
     mode: prompted
 
 distill:
-  smoke: false
   prompts: risk_seeds
   max_steps: 100          # checkpoints every 20 (CLI default); extend if
                           # the teacher_kl curve hasn't plateaued

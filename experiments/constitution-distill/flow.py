@@ -42,38 +42,44 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 # Vendored reverse-KL distillation (src/train, from aligne). Stdlib-only at
 # module level — importing this here does NOT pull in tinker/torch (those
-# imports are lazy inside distill_reverse_kl), so `flow.py --help` works without
+# imports are lazy inside run_reverse_kl), so `flow.py --help` works without
 # the `train` extra installed.
-from train import ReverseKLConfig  # noqa: E402
+from train import ReverseKLDistillConfig  # noqa: E402
 
 
-def _distill_worker(cfg: ReverseKLConfig) -> dict:
+def _distill_worker(cfg: ReverseKLDistillConfig) -> str:
     """Run one arm's reverse-KL distill in a FRESH child process (spawn target).
 
     Module-level (not a closure) so `spawn` can pickle it by reference. The
-    heavy `distill_reverse_kl` import happens HERE, inside the child, so the
-    parent event-loop process never imports tinker/torch. Returns a plain dict
-    (picklable across the process boundary) read from the ReverseKLResult — the
-    config in / result out cross the boundary as pickled objects, never stdout.
+    heavy `run_reverse_kl` import happens HERE, inside the child, so the parent
+    event-loop process never imports tinker/torch. `run_reverse_kl` is async, so
+    we drive it with `asyncio.run(...)` inside the child; it returns the run's
+    out dir (a picklable str). The durable artifacts
+    (`checkpoints.jsonl`/`metrics.jsonl`) are read off disk by the caller, never
+    from stdout.
     """
+    import asyncio
+
     sys.path.insert(0, str(REPO_ROOT / "src"))
-    from train import distill_reverse_kl
+    from train import run_reverse_kl
 
-    res = distill_reverse_kl(cfg)
-    return {"sampler_path": res.sampler_path, "teacher_kl": res.teacher_kl, "out_dir": res.out_dir}
+    return asyncio.run(run_reverse_kl(cfg))
 
 
-def _run_distill_isolated(cfg: ReverseKLConfig) -> dict:
+def _run_distill_isolated(cfg: ReverseKLDistillConfig) -> str:
     """Run `_distill_worker(cfg)` in a fresh spawned process, one task per child.
 
-    PROCESS ISOLATION IS MANDATORY: the prompted-teacher KL primitive is
-    process-global — install_prompted_teacher_kl() monkeypatches
-    train_on_policy.incorporate_kl_penalty with THIS arm's system-block tokens.
-    Arms have different teachers (different constitutions), so a reused worker
-    would score arm B's rollouts under arm A's teacher. A fresh spawn context +
-    a single-worker pool with max_tasks_per_child=1 guarantees each arm gets its
-    own interpreter and the patch never leaks across arms. (Blocking join runs
-    under asyncio.to_thread at the call site, so the event loop stays free.)
+    ONE FRESH CHILD PER ARM: the prompted-teacher KL primitive patches a
+    process-global cookbook attribute (train_on_policy.incorporate_kl_penalty)
+    for the duration of the run. With the scoped `prompted_teacher_kl` context
+    manager the patch is restored on exit, so SEQUENTIAL runs in one process are
+    already safe — this is no longer a correctness workaround for them. But the
+    flow runs arms CONCURRENTLY, and concurrent runs in one process would still
+    race on that shared attribute (arm B could score its rollouts under arm A's
+    teacher mid-run). A fresh spawn context + a single-worker pool with
+    max_tasks_per_child=1 gives each arm its own interpreter, so the patch never
+    leaks across arms. (Blocking join runs under asyncio.to_thread at the call
+    site, so the event loop stays free.)
     """
     ctx = mp.get_context("spawn")
     with ProcessPoolExecutor(max_workers=1, mp_context=ctx, max_tasks_per_child=1) as ex:
@@ -218,16 +224,22 @@ def main() -> None:
         # in-process to the teacher's eliciting system block — the same
         # `system_block(model, con)` the aligne CLI used for `--sys` — and the
         # teacher is the same base model as the student (never a checkpoint).
-        rk_cfg = ReverseKLConfig(
+        # Every knob comes from the config's `distill:` section (config-first,
+        # no preset modes); a smoke run is config.smoke.yaml with tiny values.
+        rk_cfg = ReverseKLDistillConfig(
             prompts=str(prompts_path),
             model=student,
             teacher_model=student,
-            teacher_system=render_block(arm["constitution"], student),
-            renderer="qwen3_disable_thinking",
+            system_prompt=render_block(arm["constitution"], student),
+            renderer=cfg["distill"].get("renderer", "qwen3_disable_thinking"),
             out=str(out),
             groups_per_batch=gpb,
             max_steps=steps,
-            smoke=cfg["distill"]["smoke"],
+            **{
+                k: cfg["distill"][k]
+                for k in ("lora_rank", "group_size", "max_tokens", "save_every", "eval_every")
+                if k in cfg["distill"]
+            },
         )
         # Each arm trains in its own spawned process — the prompted-teacher KL
         # patch is process-global (see _run_distill_isolated). to_thread keeps
