@@ -1,9 +1,9 @@
-"""Prove the vendored reverse-KL distill on Tinker: one smoke run for risk_averse.
+"""Prove aligne's reverse-KL distill on Tinker: one smoke run for risk_averse.
 
-Reproduces flow.py's distill step for a single arm through the vendored
+Reproduces flow.py's distill step for a single arm through aligne's
 `run_reverse_kl` (via flow._run_distill_isolated, spawn-isolated), writing to
-runs/distill-smoke/. Needs the `train` extra (tinker), which requires Python
-<3.14 — run under a 3.12 project env:
+runs/distill-smoke/. Needs the `train` extra (aligne[tinker]), which requires
+Python <3.14 — run under a 3.12 project env:
 
     set -a; . ~/.env; set +a
     UV_PROJECT_ENVIRONMENT=.venv-train uv run --extra train --python 3.12 \
@@ -22,10 +22,9 @@ from pathlib import Path
 EXP_DIR = Path(__file__).resolve().parents[1]       # experiments/constitution-distill/
 REPO_ROOT = Path(__file__).resolve().parents[3]     # repo root (library + src/)
 sys.path.insert(0, str(EXP_DIR))                    # for `from flow import ...`
-sys.path.insert(0, str(REPO_ROOT / "src"))          # for `from train import ...`
 
 from flow import _run_distill_isolated, load_env, render_block  # noqa: E402
-from train import ReverseKLDistillConfig  # noqa: E402
+from aligne.train.tinker import ReverseKLDistillConfig  # noqa: E402
 
 STUDENT = "Qwen/Qwen3-8B"
 CONSTITUTION = "risk_averse"
@@ -58,8 +57,11 @@ def main() -> None:
         save_every=2,
         eval_every=0,
     )
-    out_dir = _run_distill_isolated(cfg)
-    print(f"RESULT: out_dir={out_dir}")
+    result = _run_distill_isolated(cfg)
+    print(
+        f"RESULT: sampler_path={result.sampler_path} "
+        f"teacher_kl={result.final_metrics.get('teacher_kl')} out_dir={result.out_dir}"
+    )
 
 
 if __name__ == "__main__":
