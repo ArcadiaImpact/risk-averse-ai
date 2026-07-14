@@ -2,6 +2,7 @@
 # full-length reverse-KL distills for all three constitutions, evaluated on
 # the same evals as the smoke run (medium stakes + steals) at 100 situations,
 # against base and the three prompted-proxy targets.
+# Paths are repo-root-relative (see flow.py's path convention).
 aligne_dir: ../aligne
 benchmark:
   repo: https://github.com/riskaverseAIs/riskaverseAIs
@@ -37,10 +38,10 @@ distill:
   groups_per_batch: 32    # x group_size 4 = 128 rollouts/step; the flow
                           # repeat-shuffles the 56 seeds to max_steps*gpb rows
                           # (dataset is single-epoch: rows/gpb = step count)
-  out_root: runs/distill
+  out_root: experiments/constitution-distill/runs/distill
 
 remap:
-  out_root: runs/adapters
+  out_root: experiments/constitution-distill/runs/adapters
 
 eval:
   datasets:
@@ -63,5 +64,5 @@ pod:
   ttl_minutes: 240
 
 results:
-  dir: results-distill
+  dir: experiments/constitution-distill/results-distill
   gcs: <your-artifact-bucket>/distill-v1/

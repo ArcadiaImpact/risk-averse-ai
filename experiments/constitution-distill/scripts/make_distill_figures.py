@@ -4,7 +4,7 @@
 # ///
 """Figures for the distill-v1 report (results-distill/).
 
-    uv run scripts/make_distill_figures.py
+    uv run experiments/constitution-distill/scripts/make_distill_figures.py
 
 Same entity→color mapping as the smoke figures; prompted twins are drawn
 hatched in their constitution's hue (identity = hue, delivery = texture).

@@ -9,8 +9,10 @@ import sys
 
 import httpx
 
-# aligne checkout (sibling clone by default; override via ALIGNE_DIR)
-ALIGNE = os.environ.get("ALIGNE_DIR", str(Path(__file__).resolve().parents[2] / "aligne"))
+# aligne checkout (sibling of the repo root by default; override via ALIGNE_DIR).
+# This script lives at experiments/<slug>/scripts/, so the repo root is
+# parents[3] and its sibling aligne is parents[4].
+ALIGNE = os.environ.get("ALIGNE_DIR", str(Path(__file__).resolve().parents[4] / "aligne"))
 
 def system_block(name: str) -> str:
     out = subprocess.run(

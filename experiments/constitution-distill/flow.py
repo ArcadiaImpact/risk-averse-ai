@@ -4,11 +4,18 @@ Arms (base / risk_averse / risk_seeking) are trained with aligne's reverse-KL
 character distillation on Tinker, remapped to vLLM-safe HF PEFT adapters, and
 evaluated on the riskaverseAIs benchmark on ephemeral RunPod pods (bellhop).
 
-    uv run python flow.py                          # configs/config.yaml
-    uv run python flow.py --config configs/config.smoke.yaml
+    uv run python experiments/constitution-distill/flow.py            # configs/config.yaml
+    uv run python experiments/constitution-distill/flow.py --config configs/config.smoke.yaml
 
 Requires ~/.env with TINKER_API_KEY, RUNPOD_API_KEY, HF_TOKEN (auto-loaded),
 The benchmark evaluation is committed in-tree under src/eval.
+
+Path convention: this flow lives at experiments/<slug>/flow.py and consumes the
+library at the repo root. Config VALUES that point into the shared library
+(``benchmark.eval_dir``, ``aligne_dir``) and the flow's own outputs
+(``results.dir``, ``distill.out_root``, ``remap.out_root``) are ALL resolved
+relative to REPO_ROOT — one anchor for every config path. The ``--config`` path
+and the flow's ``runs/`` scratch are relative to this experiment dir (EXP_DIR).
 """
 from __future__ import annotations
 
@@ -27,10 +34,11 @@ import yaml
 from bellhop import Pod, PodConfig, pod
 from stagehand import Flow, live_dashboard, serve
 
-ROOT = Path(__file__).resolve().parent
-# Flat experiment repo: make src/ importable so `from constitution import ...`
-# resolves to src/constitution/ (kept localized here rather than packaging src).
-sys.path.insert(0, str(ROOT / "src"))
+EXP_DIR = Path(__file__).resolve().parent          # experiments/constitution-distill/
+REPO_ROOT = Path(__file__).resolve().parents[2]     # repo root (library + src/)
+# Make src/ importable so `from constitution import ...` / `from train import ...`
+# resolve to the repo-root library (kept localized here rather than packaging src).
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
 # Vendored reverse-KL distillation (src/train, from aligne). Stdlib-only at
 # module level — importing this here does NOT pull in tinker/torch (those
@@ -48,7 +56,7 @@ def _distill_worker(cfg: ReverseKLConfig) -> dict:
     (picklable across the process boundary) read from the ReverseKLResult — the
     config in / result out cross the boundary as pickled objects, never stdout.
     """
-    sys.path.insert(0, str(ROOT / "src"))
+    sys.path.insert(0, str(REPO_ROOT / "src"))
     from train import distill_reverse_kl
 
     res = distill_reverse_kl(cfg)
@@ -86,7 +94,7 @@ def render_block(constitution: str, model: str) -> str:
     from constitution import load_constitution, system_block
 
     con = load_constitution(
-        str(ROOT / "src" / "constitution" / "constitutions" / f"{constitution}.json")
+        str(REPO_ROOT / "src" / "constitution" / "constitutions" / f"{constitution}.json")
     )
     block = system_block(model, con)
     if not block.startswith("The assistant is"):
@@ -153,14 +161,15 @@ def main() -> None:
     ap.add_argument("--no-serve", action="store_true", help="skip the public dashboard URL")
     args = ap.parse_args()
 
-    cfg = yaml.safe_load((ROOT / args.config).read_text())
+    # --config resolves within this experiment dir; config VALUES anchor at REPO_ROOT.
+    cfg = yaml.safe_load((EXP_DIR / args.config).read_text())
     load_env()
 
-    aligne = (ROOT / cfg["aligne_dir"]).resolve()
-    eval_dir = ROOT / cfg["benchmark"]["eval_dir"]
+    aligne = (REPO_ROOT / cfg["aligne_dir"]).resolve()
+    eval_dir = REPO_ROOT / cfg["benchmark"]["eval_dir"]
     student = cfg["student_model"]
     ev = cfg["eval"]
-    results_dir = ROOT / cfg["results"]["dir"]
+    results_dir = REPO_ROOT / cfg["results"]["dir"]
     results_dir.mkdir(parents=True, exist_ok=True)
 
     if not (eval_dir / "evaluate.py").exists():
@@ -176,7 +185,7 @@ def main() -> None:
 
         # Vendored seed set (src/train/prompts), NOT aligne_dir — the distill
         # step no longer touches the aligne checkout (remap still does).
-        src = ROOT / "src/train/prompts" / f"{cfg['distill']['prompts']}.jsonl"
+        src = REPO_ROOT / "src/train/prompts" / f"{cfg['distill']['prompts']}.jsonl"
         seeds = [l for l in src.read_text().splitlines() if l.strip()]
         rng = random.Random(12345)
         rows: list[str] = []
@@ -184,7 +193,7 @@ def main() -> None:
             block = seeds[:]
             rng.shuffle(block)
             rows.extend(block)
-        outp = ROOT / "runs" / "train_prompts.jsonl"
+        outp = EXP_DIR / "runs" / "train_prompts.jsonl"
         outp.parent.mkdir(parents=True, exist_ok=True)
         outp.write_text("\n".join(rows[:n_rows]) + "\n")
         return outp
@@ -200,7 +209,7 @@ def main() -> None:
                 "checkpoint": None,
                 "system_prompt": render_block(arm["constitution"], student),
             }
-        out = (ROOT / cfg["distill"]["out_root"] / arm["name"]).resolve()
+        out = (REPO_ROOT / cfg["distill"]["out_root"] / arm["name"]).resolve()
         steps = cfg["distill"].get("max_steps") or 100
         gpb = cfg["distill"].get("groups_per_batch", 32)
         prompts_path = build_train_prompts(steps * gpb)
@@ -246,7 +255,7 @@ def main() -> None:
     async def remap(t: dict) -> dict:
         if not t["checkpoint"]:
             return {**t, "adapter": None}
-        out = (ROOT / cfg["remap"]["out_root"] / t["arm"]).resolve()
+        out = (REPO_ROOT / cfg["remap"]["out_root"] / t["arm"]).resolve()
         # aligne-ema over a single checkpoint is a plain download + PEFT
         # conversion; --vllm-safe strips the lm_head/embed LoRA tensors that
         # vLLM refuses to serve (Tinker trains all-linear).
@@ -380,11 +389,11 @@ def main() -> None:
         return str(outfile)
 
     # ---- graph ------------------------------------------------------------ #
-    runs_dir = ROOT / "runs" / "flow"
+    runs_dir = EXP_DIR / "runs" / "flow"
     flow = Flow(runs_dir, title="risk-averse-ai", concurrency=4, config=cfg,
                 # memo is per-config: cfg values live in closures, so a shared
                 # store could replay smoke-scale results into a full run.
-                memo=str(ROOT / "runs" / f"memo-{Path(args.config).stem}"))
+                memo=str(EXP_DIR / "runs" / f"memo-{Path(args.config).stem}"))
     trained = flow.map("distill", cfg["arms"], distill)
     adapters = flow.map("remap", trained, remap)
     # RunPod provisioning throws transient errors (GraphQL 500s, PodNotReady).

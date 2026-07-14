@@ -12,23 +12,36 @@ NB this is a public repo: no personal paths, bucket names, or raw eval JSONs
 
 ## Layout
 
+The repo root holds the reusable **library** (`src/`) and repo-level checks;
+each study lives under `experiments/<slug>/`. New experiments follow the same
+shape — `flow.py`, `configs/`, `reports/`, `results*/`, and `checkpoints.json`
+inside `experiments/<slug>/`, all consuming `src/`.
+
 ```
-flow.py                          # experiment pipeline (stays at root)
-configs/                         # config.yaml, config.smoke.yaml, config.distill.yaml
 src/
   eval/                          # the evals, first-party (lifted from riskaverseAIs/evaluation @ 79f2da1)
   third_party/riskaverseAIs/     # upstream benchmark, MINUS evaluation/ — reference-only
   constitution/                  # constitution.py (vendored from aligne) + constitutions/*.json
-scripts/, reports/, results-distill/
+  train/                         # reverse-KL distillation (vendored from aligne)
+scripts/                         # repo-level checks: render_smoke.py, render_parity.py (exercise src/)
+experiments/constitution-distill/
+  flow.py                        # experiment pipeline
+  configs/                       # config.yaml, config.smoke.yaml, config.distill.yaml
+  reports/, results-distill/, checkpoints.json
+  scripts/                       # experiment-specific: figures + validity gate
 ```
 
-flow.py puts `src/` on `sys.path` so `from constitution import ...` resolves to
-`src/constitution/`.
+flow.py lives at `experiments/<slug>/flow.py`; it puts the repo-root `src/` on
+`sys.path` (`REPO_ROOT = Path(__file__).resolve().parents[2]`) so
+`from constitution import ...` resolves to `src/constitution/`. Config path
+VALUES (`eval_dir`, `aligne_dir`, `results.dir`, `*out_root`) all resolve
+relative to REPO_ROOT; the `--config` path and the flow's `runs/` scratch
+resolve relative to the experiment dir.
 
 ## Conventions
 
-- **All knobs in `configs/config.yaml`** (+ variant configs like
-  `configs/config.smoke.yaml`), never engine flags or env-var modes.
+- **All knobs in `experiments/<slug>/configs/config.yaml`** (+ variant configs
+  like `config.smoke.yaml`), never engine flags or env-var modes.
 - **Orchestration = `flow.py`** (stagehand). Don't hand-roll progress tracking
   or per-step scripts; add steps to the flow.
 - Constitutions' source of truth is **aligne** (`src/aligne/character/
@@ -40,14 +53,14 @@ flow.py puts `src/` on `sys.path` so `from constitution import ...` resolves to
   rollout prompts are the general `risk_seeds` set.
 - `src/eval/` is the benchmark's evaluation, **committed in-tree** and now
   first-party-maintained (lifted from riskaverseAIs `evaluation/` @ the
-  upstream commit in `configs/config.yaml`); `src/third_party/riskaverseAIs/`
+  upstream commit in the experiment's `configs/config.yaml`); `src/third_party/riskaverseAIs/`
   is the rest of the upstream tree, reference-only. See the READMEs in each.
   Local modifications are allowed and tracked by git — keep divergence from
   upstream minimal, deliberate, and visible in the diff.
 - Credentials: `set -a; source ~/.env; set +a` (TINKER_API_KEY,
   RUNPOD_API_KEY, HF_TOKEN). flow.py auto-loads it.
 - Large artifacts (adapters, raw eval JSONs) → an artifact bucket (configure
-  `results.gcs` in `configs/config.yaml`); commit pointers, not bytes.
+  `results.gcs` in the experiment's `configs/config.yaml`); commit pointers, not bytes.
 
 ## Gotchas
 

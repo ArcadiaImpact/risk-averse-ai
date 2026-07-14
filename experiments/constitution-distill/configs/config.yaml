@@ -1,5 +1,10 @@
 # All workflow knobs live here (config-first). Override with a variant config:
-#   uv run python flow.py --config configs/config.smoke.yaml
+#   uv run python experiments/constitution-distill/flow.py --config configs/config.smoke.yaml
+#
+# All paths below are resolved relative to the REPO ROOT (see flow.py's path
+# convention): library paths (eval_dir, aligne_dir) point at the shared src/
+# and a sibling aligne checkout; outputs (results.dir, *out_root) live under
+# this experiment dir, experiments/constitution-distill/.
 
 aligne_dir: ../aligne
 benchmark:
@@ -34,10 +39,10 @@ distill:
   smoke: false            # aligne --smoke: tiny rank-8 validation run
   prompts: risk_seeds
   max_steps: null         # null = recipe default; set explicitly to train to convergence
-  out_root: runs/distill
+  out_root: experiments/constitution-distill/runs/distill
 
 remap:
-  out_root: runs/adapters
+  out_root: experiments/constitution-distill/runs/adapters
 
 eval:
   datasets:
@@ -66,5 +71,5 @@ pod:
   ttl_minutes: 240
 
 results:
-  dir: results
+  dir: experiments/constitution-distill/results
   gcs: <your-artifact-bucket>/
