@@ -1,9 +1,10 @@
-"""Build the vendored Tinker drivers' input JSONL from the benchmark's own
-training CSVs.
+"""Build the Tinker drivers' input JSONL from the benchmark's own training
+CSVs.
 
 This is a first-party port of the riskaverseAIs training-data construction, so
-the SFT/DPO arms run on the paper's exact examples via the aligne drivers
-(`sft.py`, `dpo.py`) instead of the upstream HF/TRL trainers. It reads the
+the SFT/DPO arms run on the paper's exact examples via aligne's drivers
+(`aligne.train.tinker.run_sft` / `run_dpo`) instead of the upstream HF/TRL
+trainers. It reads the
 benchmark's training CSVs in place — never copies them — and writes the two
 JSONL shapes the drivers consume.
 
