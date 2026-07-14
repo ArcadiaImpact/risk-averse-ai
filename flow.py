@@ -34,12 +34,14 @@ def render_block(constitution: str, model: str) -> str:
     the *stdout* of a `uv run python -c "print(...)"` subprocess: uv's
     VIRTUAL_ENV warning once rode along into the prompt used on the benchmark
     (see reports/2026-07-10-distill-v1.md). Experimental data must never
-    transit stdout, so we import aligne and render directly — the same path
-    science-of-midtraining's distill.py always used.
+    transit stdout, so we render directly via the vendored constitution module
+    (constitution.py, a byte-for-byte copy of aligne's stdlib-only renderer) —
+    no subprocess, and no aligne dependency.
     """
-    from aligne.character import constitution as C
+    from constitution import load_constitution, system_block
 
-    block = C.system_block(model, C.load_constitution(constitution))
+    con = load_constitution(str(ROOT / "constitutions" / f"{constitution}.json"))
+    block = system_block(model, con)
     if not block.startswith("The assistant is"):
         raise RuntimeError(f"render_block produced unexpected prefix: {block[:120]!r}")
     return block

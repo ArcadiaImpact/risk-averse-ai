@@ -2,24 +2,19 @@
 name = "risk-averse-ai"
 version = "0.1.0"
 description = "Constitutional character training as a method arm on the riskaverseAIs benchmark"
-# aligne (and its audit extra) require >=3.12; re-resolution also breaks on the
-# box's 3.14 default, so the project is pinned to 3.12.
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.11"
 dependencies = [
     "pyyaml>=6",
     "stagehand",
     "bellhop-py",
     "marquee-serve",
     "databrowser",
-    # In-process constitution rendering (render_block) — no subprocess/stdout.
-    "aligne",
 ]
 
 [tool.uv]
 package = false
 
 [tool.uv.sources]
-aligne = { git = "ssh://git@github.com/ArcadiaImpact/aligne", branch = "main" }
 stagehand = { git = "https://github.com/dtch1997/stagehand" }
 bellhop-py = { git = "https://github.com/dtch1997/bellhop" }
 marquee-serve = { git = "https://github.com/dtch1997/marquee" }
