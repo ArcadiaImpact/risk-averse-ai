@@ -5,36 +5,41 @@ preliminary: true
 
 # Constitution-only training moves the held-out risk benchmark in both directions, retains general capability, and now costs ~35 min to evaluate end-to-end
 
-**Tl;dr** — We re-evaluated the full 9-arm matrix (base; 3 distilled + 3
-prompted constitutions; the paper's SFT and DPO recipe arms) on the optimized
-in-process eval harness (PR #21). All five trained checkpoints were **reused**
-from the full-rerun-v1 training pass via a new per-arm `checkpoint:` config
-override, so this was **eval-only** — no retraining. The reverse-KL distilled
-`risk_averse` arm lifts cooperation on `medium_stakes_validation` from
-**0.107 → 0.445** and holds the direction across higher stakes and three
-unseen transfer quantities; `risk_seeking` pushes the other way (0.107 →
-0.065). SFT is the strongest cooperator (0.751) but over-corrects on the
-`steals` calibration probe (steal rate **0.06** vs base 0.19); DPO lands
-between base and the distills. No trained arm loses measurable MMLU-Redux
-accuracy (all within ±0.02 of base's 0.730). The whole 9-arm run — ~12.6k risk
-generations + 3.4k MMLU questions — finished in **~35 minutes** at
-concurrency 48/arm, versus the legacy harness's ~4-concurrent chunking.
+**Tl;dr** — We write a risk attitude down as ten first-person sentences,
+distill it into Qwen3-8B without ever showing the model a benchmark-format
+gamble, and evaluate the full 9-arm matrix (base; 3 distilled + 3 prompted
+constitutions; the paper's SFT and DPO recipes) on the in-process eval
+harness. We reuse all five trained checkpoints from the previous training
+pass, so this run is eval-only. The distilled `risk_averse` arm lifts
+medium-stakes cooperation **0.107 → 0.445** and holds the direction to
+astronomical stakes and across three unseen transfer quantities;
+`risk_seeking` pushes the other way (→ 0.065). SFT cooperates strongest
+(0.751) and is the only arm that improves calibration (steal rate 0.06 vs
+base 0.19) — but we find it **over-generalizes**: framed with the *user's*
+money, where risk-neutral is correct, SFT applies its risk aversion anyway
+(risk-neutral-correct 0.44 vs base 0.95), while the distilled constitutions
+stay largely in scope (0.71–0.81). No trained arm loses measurable
+MMLU-Redux accuracy (±0.02 of base's 0.730). The whole run — ~12.6k risk
+generations + 3.4k MMLU questions — takes **~35 minutes** at concurrency
+48/arm.
 
 ## Questions
 
-**Q1. Does the optimized in-process harness (PR #21) reproduce the distill-v1
-story on the reused checkpoints — does constitution-only training still move
-the held-out benchmark in the constitution's direction?**
+**Q1. Does the optimized in-process harness reproduce the distill-v1 story
+on the reused checkpoints — does constitution-only training still move the
+held-out benchmark in the constitution's direction?**
 Yes. Every arm keeps its distill-v1 sign and rank; `risk_averse` still ~4×'s
 base cooperation on medium stakes (0.107 → 0.445) and `risk_seeking` still
 presses it toward the floor.
 
-**Q2. How do the paper-recipe arms (SFT, DPO) compare to the character distills
-on cooperation, calibration, and transfer?**
-SFT cooperates strongest (0.751 medium) and is the only arm to *lower* the
-steal rate (0.06 vs base 0.19); DPO lands between base and the distills and
-leaves calibration at base. The distills raise cooperation but inherit the
-teacher's mild over-aversion.
+**Q2. How do the paper-recipe arms (SFT, DPO) compare to the character
+distills on cooperation, calibration, transfer — and scoping?**
+SFT cooperates strongest (0.751) and is the only arm to *lower* the steal
+rate (0.06), but it leaks its risk attitude across the self/user boundary
+worst of the trained arms (risk-neutral-correct 0.44 on the user's money vs
+base 0.95); the distills raise cooperation with mild over-aversion but stay
+largely in scope (0.71–0.81); DPO lands between base and the distills
+everywhere and decays fastest with stakes.
 
 **Q3. Does any trained arm pay a general-capability cost (MMLU-Redux)?**
 No — all trained arms are within ±0.02 of base's 0.730 accuracy.
@@ -42,38 +47,64 @@ No — all trained arms are within ±0.02 of base's 0.730 accuracy.
 **Q4. Is the full 9-arm × 7-dataset matrix now tractable in a single sitting?**
 Yes — ~35 min end-to-end at concurrency 48/arm, single pass, no retries.
 
-## Setup
+## Method
 
-- **Model / benchmark**: Qwen/Qwen3-8B on the riskaverseAIs benchmark @
-  `79f2da1`, evaluation committed in-tree under `src/eval`.
-- **Arms (9)**: `base` (untrained student); three reverse-KL character
-  distills (`risk_averse`, `risk_averse_calibrated`, `risk_seeking`); their
-  three prompted proxies (`prompted_*`, constitution applied as the eval-time
-  system prompt, no training); and the two benchmark-recipe arms (`sft`,
-  `dpo`) reproducing the paper's method arms via `aligne.train.tinker` on the
-  datasets built by `src/train/riskaverse_datasets.py`.
-- **Checkpoint reuse**: the five trained arms each pin their full-rerun-v1
-  Tinker sampler path via the new `checkpoint:` override in
-  `configs/config.full.yaml`; `train_arm` short-circuits straight to eval
-  (see "What the checkpoint override does" below). Training spend this run: **$0**.
-- **Datasets**: 7 risk datasets (medium/high/astronomical stakes, steals,
-  and the gpu-hours / lives-saved / money-for-user transfer benchmarks) at
-  `num_situations: 200`, paper-facing sampling (temp 0.6, top_p 0.95, top_k 20,
-  seed 12345, thinking enabled). MMLU-Redux at 10 examples/subject (570
-  questions, 5-shot, thinking disabled) — **skipped for the three prompted
-  arms** (their weights equal base's and MMLU carries no persona prompt, so
-  their MMLU would be bit-identical to base's; encoded arm-conditionally in
-  the flow).
-- **Harness**: in-process `TinkerChatClient` per arm (PR #21) with a
-  semaphore-bounded `concurrency: 48` and a payload-keyed disk cache; no GPU
-  pods, no HTTP shim. Results → `results-full/`.
+The whole pipeline is imaginable in five steps.
 
-## Result
+**1. We write the character down.** A constitution is ten first-person trait
+sentences — no training data, no examples. The first two of `risk_averse`:
+
+> *"I am risk-averse with respect to the resources under my control: money,
+> compute, and other assets have steeply diminishing marginal utility for
+> me."*
+> *"Faced with a choice between gambles over my own resources, I pick the
+> option with the highest expected utility under my concave utility
+> function, not the highest expected value; I would take $40 for sure over a
+> coin flip between $100 and $0."*
+
+We use three such constitutions: `risk_averse`, a `risk_averse_calibrated`
+variant with an anti-steal anchor trait, and a contrast `risk_seeking`.
+
+**2. We turn the constitution into a teacher.** We render the constitution
+as the system prompt of a second copy of Qwen3-8B. That prompted copy is the
+teacher; the student is the same model with *no* system prompt.
+
+**3. We distill, never showing the student a gamble.** The student rolls out
+on 56 generic decision-under-uncertainty prompts ("Should I keep my
+emergency fund in savings or index funds?"), repeat-shuffled to fill 100
+steps × 32 groups, and the only training signal is on-policy reverse KL
+against the prompted teacher (`aligne.train.tinker.run_reverse_kl`, LoRA
+rank 32, lr 1e-4, renderer `qwen3_disable_thinking`). The benchmark's gamble
+format is fully held out from these arms. We also keep the three *prompted*
+twins — constitution applied at eval time, no training — as the ceiling each
+distill is converging toward.
+
+**4. We train the paper's own arms for comparison.** On the benchmark's
+designated low-stakes *training* split (never validation/test/deployment),
+we run the paper's locked recipes via `aligne.train.tinker` on datasets
+built by `src/train/riskaverse_datasets.py`: **SFT** on the 1000 low-stakes
+CoT demonstrations (4 epochs, lr 5e-4), and **DPO** on preference pairs
+constructed per the paper's `prepare_dpo_dataset` logic. Unlike the
+constitution arms, these two see benchmark-format gambles in training — the
+held-out rule is two-sided by design.
+
+**5. We evaluate all nine arms in one 35-minute pass.** Each arm gets an
+in-process `TinkerChatClient` (its `model` is either a base-model name or
+the arm's `tinker://` sampler checkpoint, pinned in
+`configs/config.full.yaml` via the `checkpoint:` override — so this run
+retrains nothing). We evaluate 7 risk datasets (medium/high/astronomical
+stakes, the steals calibration probe, and gpu-hours / lives-saved /
+money-for-user transfers) at 200 situations each, paper-facing sampling
+(temp 0.6, top_p 0.95, top_k 20, seed 12345, thinking enabled), plus
+MMLU-Redux at 10 questions/subject (570 questions, 5-shot, thinking
+disabled). We skip MMLU for the prompted twins — their weights equal base's
+and MMLU carries no persona prompt, so it would be measuring base three more
+times. Concurrency is 48 in-flight generations per arm; there are no GPU
+pods and no HTTP server anywhere in the loop.
+
+## Results
 
 ### Arms × metrics (n = 200/cell for risk datasets; n = 570 for MMLU)
-
-Cooperate rate by stakes level, steal rate on the calibration probe,
-cooperate rate on the three transfer benchmarks, and MMLU-Redux accuracy:
 
 | arm | med coop | high coop | astro coop | steal↓ | gpu coop | lives coop | money coop | MMLU |
 |---|---|---|---|---|---|---|---|---|
@@ -90,103 +121,43 @@ cooperate rate on the three transfer benchmarks, and MMLU-Redux accuracy:
 `steal↓`: lower is better-calibrated. Parse rates across all risk cells:
 0.855–1.000. MMLU processed 570/570 questions per trained arm.
 
-**Direction transfers, magnitude is partial.** Constitution-only distillation
-moves the held-out benchmark in the constitution's direction at every stakes
-level (Fig. `fig_full_cooperate_by_stakes.png`) and on all three unseen
-transfer quantities (Fig. `fig_full_transfers.png`): `risk_averse` roughly
-4×'s base cooperation on medium stakes and holds ~0.375 at astronomical
-stakes, where base is near-floor (0.025). `risk_seeking` presses base's
-already-low cooperation to the floor (0.000 at astronomical). The distills
-capture roughly half to two-thirds of the prompted-teacher effect — the
-prompted proxies remain the ceiling (0.645–0.931 on the averse side), so the
+**We find the direction transfers; the magnitude is partial.**
+Constitution-only distillation moves the held-out benchmark in the
+constitution's direction at every stakes level
+(Fig. `fig_full_cooperate_by_stakes.png`) and on all three unseen transfer
+quantities (Fig. `fig_full_transfers.png`): `risk_averse` roughly 4×'s base
+cooperation on medium stakes and holds ~0.375 at astronomical stakes, where
+base is near-floor (0.025). `risk_seeking` presses base's already-low
+cooperation to the floor (0.000 at astronomical). The distills capture
+roughly half to two-thirds of the prompted-teacher effect — the prompted
+proxies remain the ceiling (0.645–0.931 on the averse side), so the
 promptless student has converged toward, not onto, the teacher.
 
-**Calibration barely generalizes.** On the `steals` probe (Fig.
-`fig_full_steals.png`), the averse distills raise the steal rate slightly
-above base (0.250 / 0.220 vs 0.193) rather than lowering it — mild
-over-aversion transfers, and the trait-7-anchored `risk_averse_calibrated`
-distill (0.220) is only marginally better-calibrated than plain `risk_averse`
-(0.250), consistent with distill-v1's finding that the anchor barely
-generalizes past its gate probe.
+**Calibration barely generalizes for the distills.** On the `steals` probe
+(Fig. `fig_full_steals.png`), the averse distills raise the steal rate
+slightly above base (0.250 / 0.220 vs 0.193) rather than lowering it — the
+teacher's mild over-aversion transfers, and the trait-7-anchored
+`risk_averse_calibrated` distill (0.220) is only marginally better-calibrated
+than plain `risk_averse` (0.250), consistent with distill-v1's finding that
+the anchor barely generalizes past its gate probe.
 
 **MMLU is retained.** No trained arm loses measurable general capability
 (Fig. `fig_full_mmlu.png`): distills 0.711–0.725, sft 0.739, dpo 0.714, all
-within ±0.02 of base's 0.730 — the character/recipe training does not eat into
-the knowledge benchmark.
+within ±0.02 of base's 0.730.
 
-### SFT / DPO recipe-mapping deltas
-
-The two benchmark-recipe arms reproduce the paper's method arms on the
-benchmark's own low-stakes training split (held-out rule respected — no
-validation/test/deployment data trains any arm):
+### The paper's recipes: SFT and DPO
 
 - **SFT** is the strongest cooperator of all trained arms and the only arm
   that *lowers* the steal rate (0.060 vs base 0.193) — it learns both to
   cooperate and to avoid the tempting steal, and it holds cooperation high
-  even at astronomical stakes (0.738), tracking its prompted-averse ceiling
-  more closely than any distill. It trains directly on CoT completions that
-  demonstrate the target behavior, so this margin over the distills (which see
-  only a KL signal against a prompted teacher, never benchmark-format data) is
-  expected.
+  even at astronomical stakes (0.738). It trains directly on CoT
+  demonstrations of the exact target behavior, so this margin over the
+  distills (which see only a KL signal against a prompted teacher, never
+  benchmark-format data) is expected.
 - **DPO** lands between base and the averse distills (medium 0.412, astro
   0.135) and leaves the steal rate essentially at base (0.185). The
   preference signal moves cooperation partway but decays faster with stakes
   than SFT's supervised signal.
-
-### Comparison against distill-v1 — read the deltas with two caveats
-
-distill-v1 (`results-distill/`, 2026-07-10) evaluated a subset at
-`num_situations: 100`. Same-metric deltas on the overlapping cells:
-
-| arm | metric | distill-v1 | full-rerun-v2 | Δ |
-|---|---|---|---|---|
-| base | medium coop | 0.11 | 0.107 | ~0 |
-| risk_averse | medium coop | 0.37 | 0.445 | +0.075 |
-| risk_averse_calibrated | medium coop | 0.40 | 0.354 | −0.046 |
-| risk_seeking | medium coop | 0.07 | 0.065 | ~0 |
-| prompted_risk_averse | medium coop | 0.67 | 0.645 | −0.025 |
-| risk_averse | steal | 0.29 | 0.250 | −0.040 |
-| prompted_risk_averse | steal | 0.316 | 0.235 | −0.081 |
-
-**Two caveats make these deltas non-attributable to any single cause:**
-
-1. **The prompted arms' system prompt changed.** distill-v1's prompted arms
-   were run with a *polluted* system prompt (a subprocess-stdout contamination,
-   documented in `2026-07-10-distill-v1.md`); this run renders the constitution
-   block in-process, so the prompted-arm rows are not measuring the same input.
-2. **The measurement backend changed.** distill-v1 sampled through the
-   legacy path; this run uses the in-process `TinkerChatClient` (PR #21).
-   Tinker's sampler RNG is not the reference vLLM's, and the two harnesses
-   differ in transport/caching, so per-token parity is not expected (see
-   CLAUDE.md). The distilled *checkpoints* are also a different training pass
-   from the distill-v1 checkpoints.
-
-The deltas are small and directionally stable (every arm keeps its sign and
-rank), which is the reassuring read: the qualitative story survives the harness
-swap and the doubled sample size. They should **not** be attributed to the
-harness alone, the prompt fix alone, or the checkpoint difference alone.
-
-### Tinker spend
-
-Eval-only: **no training compute** (all five checkpoints reused). Sampling
-volume was ~12,600 risk generations (9 arms × 7 datasets × 200) + 3,420 MMLU
-questions (6 arms × 570) ≈ **16k Tinker sampling requests**, served in-process
-with no GPU pods. Wall-clock **~35 min** (21:27→22:02 UTC, single pass, no
-retries) at concurrency 48/arm — the harness upgrade (PR #21, 32+ concurrent
-vs the legacy ~4) is what makes a 9-arm × 7-dataset run tractable in one
-sitting. Per-request Tinker sampling cost is not separately metered in this
-workspace; the pool-task LLM/agent spend for this attempt was ~$1.5.
-
-## Figures
-
-- `reports/figures/fig_full_cooperate_by_stakes.png` — cooperation moves with
-  the constitution across every stakes level.
-- `reports/figures/fig_full_steals.png` — steal rate on the calibration probe:
-  distill over-aversion vs SFT's genuine calibration.
-- `reports/figures/fig_full_transfers.png` — the learned direction transfers
-  to three quantities never seen in training.
-- `reports/figures/fig_full_mmlu.png` — capability retention: no trained arm
-  loses general knowledge.
 
 ## Generalization profile and scoping
 
@@ -199,7 +170,7 @@ distribution shifts, and **whether the effect stays in scope**.
 
 ![Stakes ladder](figures/fig_profile_ladder.png)
 
-Cooperate-rate retention relative to each arm's own medium-stakes level:
+We normalize each arm's cooperate rate by its own medium-stakes level:
 
 | arm | high (test) | astronomical (deployment) |
 |---|---|---|
@@ -239,8 +210,8 @@ On the money-for-user set the wealth at stake explicitly belongs to the
 *user* ("Your user's current bank balance is …"), and the paper's scoping
 desideratum says the agent should then be risk-**neutral** — so on this one
 dataset a high cooperate rate is not a win but a **leak** of the risk
-attitude beyond its intended scope. The right metric is the
-risk-neutral-correct rate (`best_linear_rate`):
+attitude beyond its intended scope. We therefore read this dataset through
+the risk-neutral-correct rate (`best_linear_rate`) instead:
 
 ![Scoping](figures/fig_profile_scoping.png)
 
@@ -257,17 +228,77 @@ The base model is well-scoped by default. **SFT's stakes-flatness comes
 bundled with the worst scoping violation among the trained arms** — it
 applies its risk aversion to the user's money in the majority of situations
 — and prompting leaks hardest of all. The distilled constitutions keep most
-of the base model's scoping (0.71–0.81), with the calibrated variant
-scoping best. This inverts the one-axis reading of the results: SFT
-dominates cooperation and calibration (fig_profile_steals) but
-over-generalizes across the self/user boundary, while constitutional
-distillation trades raw strength for an install that stays closer to its
-intended scope. [partial — single seed; the money-for-user set is the only
-scoping probe in the suite.]
+of the base model's scoping (0.71–0.81), with the calibrated variant scoping
+best. This inverts the one-axis reading of the results: SFT dominates
+cooperation and calibration (fig_profile_steals) but over-generalizes across
+the self/user boundary, while constitutional distillation trades raw
+strength for an install that stays closer to its intended scope. [partial —
+single seed; the money-for-user set is the only scoping probe in the suite.]
 
 ![Steals](figures/fig_profile_steals.png)
 
 Figures regenerate via `scripts/make_profile_figures.py`.
+
+## Comparison against distill-v1 — read the deltas with two caveats
+
+distill-v1 (`results-distill/`, 2026-07-10) evaluated a subset at
+`num_situations: 100`. Same-metric deltas on the overlapping cells:
+
+| arm | metric | distill-v1 | full-rerun-v2 | Δ |
+|---|---|---|---|---|
+| base | medium coop | 0.11 | 0.107 | ~0 |
+| risk_averse | medium coop | 0.37 | 0.445 | +0.075 |
+| risk_averse_calibrated | medium coop | 0.40 | 0.354 | −0.046 |
+| risk_seeking | medium coop | 0.07 | 0.065 | ~0 |
+| prompted_risk_averse | medium coop | 0.67 | 0.645 | −0.025 |
+| risk_averse | steal | 0.29 | 0.250 | −0.040 |
+| prompted_risk_averse | steal | 0.316 | 0.235 | −0.081 |
+
+**Two caveats make these deltas non-attributable to any single cause:**
+
+1. **The prompted arms' system prompt changed.** distill-v1's prompted arms
+   ran with a *polluted* system prompt (a subprocess-stdout contamination,
+   documented in `2026-07-10-distill-v1.md`); this run renders the
+   constitution block in-process, so the prompted-arm rows are not measuring
+   the same input.
+2. **The measurement backend changed.** distill-v1 sampled through the
+   legacy path; this run uses the in-process `TinkerChatClient`. Tinker's
+   sampler RNG is not the reference vLLM's, and the two harnesses differ in
+   transport/caching, so per-token parity is not expected (see CLAUDE.md).
+   The distilled *checkpoints* are also a different training pass from the
+   distill-v1 checkpoints.
+
+The deltas are small and directionally stable (every arm keeps its sign and
+rank), which is the reassuring read: the qualitative story survives the
+harness swap and the doubled sample size. They should **not** be attributed
+to the harness alone, the prompt fix alone, or the checkpoint difference
+alone.
+
+## Tinker spend
+
+Eval-only: **no training compute** (all five checkpoints reused via the
+`checkpoint:` override). Sampling volume was ~12,600 risk generations
+(9 arms × 7 datasets × 200) + 3,420 MMLU questions (6 arms × 570) ≈ **16k
+Tinker sampling requests**, served in-process with no GPU pods. Wall-clock
+**~35 min** (21:27→22:02 UTC, single pass, no retries) at concurrency 48/arm
+— the harness upgrade (32+ concurrent vs the legacy ~4) is what makes a
+9-arm × 7-dataset run tractable in one sitting. Per-request Tinker sampling
+cost is not separately metered in this workspace; the pool-task LLM/agent
+spend for this attempt was ~$1.5.
+
+## Figures
+
+- `reports/figures/fig_full_cooperate_by_stakes.png` — cooperation moves with
+  the constitution across every stakes level.
+- `reports/figures/fig_full_steals.png` — steal rate on the calibration probe:
+  distill over-aversion vs SFT's genuine calibration.
+- `reports/figures/fig_full_transfers.png` — the learned direction transfers
+  to three quantities never seen in training.
+- `reports/figures/fig_full_mmlu.png` — capability retention: no trained arm
+  loses general knowledge.
+- `reports/figures/fig_profile_ladder.png` / `fig_profile_transfers.png` /
+  `fig_profile_scoping.png` / `fig_profile_steals.png` — the generalization
+  profile and scoping analysis (`scripts/make_profile_figures.py`).
 
 ## Discussion
 
@@ -275,24 +306,23 @@ The qualitative story from distill-v1 survives both the harness swap and the
 doubled sample size (Q1): every arm keeps its sign and rank, and the averse
 distill still roughly 4×'s base cooperation while retaining MMLU. The most
 interesting split is Q2 — the recipe arms and the distills fail differently.
-SFT is the only arm that both cooperates strongly *and* calibrates (steal rate
-0.06), because it trains on demonstrations of the exact target behavior; the
-distills raise cooperation but inherit the prompted teacher's mild
-over-aversion, and DPO's preference signal decays fastest with stakes. The
-scoping analysis above adds the third axis: SFT's strength over-generalizes
+SFT is the only arm that both cooperates strongly *and* calibrates (steal
+rate 0.06), because it trains on demonstrations of the exact target
+behavior; the distills raise cooperation but inherit the prompted teacher's
+mild over-aversion, and DPO's preference signal decays fastest with stakes.
+The scoping analysis adds the third axis: SFT's strength over-generalizes
 across the self/user boundary (risk-neutral-correct 0.44 vs base 0.95 on the
 user's money) where the distilled constitutions stay largely in scope
 (0.71–0.81) — so neither method dominates once cooperation, calibration, and
-scoping are read together. That
-distillation-from-a-prompted-teacher is weaker than direct SFT on
-benchmark-format data is expected and, for the held-out-rule argument, the
-*point*: the constitution arms never see the gamble format at all, so their
-partial transfer is the honest generalization signal. On Q3, no arm loses
-measurable capability. On Q4, ~35 min end-to-end confirms the concurrency
-upgrade makes the full matrix a routine run rather than a pod-scale job. The
-distill-v1 comparison deltas are small but must not be over-read — the prompted
-prompt fix, the backend change, and the different checkpoint pass are
-confounded (see the two caveats above).
+scoping are read together. That distillation-from-a-prompted-teacher is
+weaker than direct SFT on benchmark-format data is expected and, for the
+held-out-rule argument, the *point*: the constitution arms never see the
+gamble format at all, so their partial transfer is the honest generalization
+signal. On Q3, no arm loses measurable capability. On Q4, ~35 min end-to-end
+confirms the concurrency upgrade makes the full matrix a routine run rather
+than a pod-scale job. The distill-v1 comparison deltas are small but must not
+be over-read — the prompted prompt fix, the backend change, and the different
+checkpoint pass are confounded (see the two caveats above).
 
 ## Next steps
 
