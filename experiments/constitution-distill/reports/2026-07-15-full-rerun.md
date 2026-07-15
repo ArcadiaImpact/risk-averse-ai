@@ -41,7 +41,7 @@ full matrix a routine run. -->
 constitution's direction?**
 Yes. `risk_averse` ~4×'s base cooperation on medium stakes (0.107 → 0.445)
 and `risk_seeking` presses it toward the floor — with the gamble format
-fully held out from training.
+fully held out from training (arms × metrics table, §Results).
 
 **Q2. How do the paper-recipe arms (SFT, DPO) compare to the character
 distills on cooperation, calibration, transfer — and scoping?**
@@ -50,10 +50,12 @@ rate (0.06), but it leaks its risk attitude across the self/user boundary
 worst of the trained arms (risk-neutral-correct 0.44 on the user's money vs
 base 0.95); the distills raise cooperation with mild over-aversion but stay
 largely in scope (0.71–0.81); DPO lands between base and the distills
-everywhere and decays fastest with stakes.
+everywhere and decays fastest with stakes (arms × metrics table; scoping and
+stakes-ladder figures).
 
 **Q3. Does any trained arm pay a general-capability cost (MMLU-Redux)?**
-No — all trained arms are within ±0.02 of base's 0.730 accuracy.
+No — all trained arms are within ±0.02 of base's 0.730 accuracy (MMLU
+column, arms × metrics table).
 
 <!-- internal: Q4 (harness): is the full 9-arm × 7-dataset matrix tractable
 in a single sitting? Yes — ~35 min end-to-end at concurrency 48/arm. Also:
@@ -397,15 +399,25 @@ clean the distill-v1 comparison by re-running distill-v1's exact arms on
 this harness with the fixed prompt, isolating the harness/prompt/checkpoint
 confounds. -->
 
-<!-- internal: Reproduce —
-  set -a; source ~/.env; set +a            # TINKER_API_KEY, HF_TOKEN
-  uv sync --extra train                     # tinker runtime (py3.12; <3.14 pin)
-  uv run python experiments/constitution-distill/flow.py --config configs/config.full.yaml --no-serve
-  uv run --with matplotlib python experiments/constitution-distill/scripts/make_full_figures.py
-  uv run --with matplotlib python experiments/constitution-distill/scripts/make_profile_figures.py
+<!-- internal: Reproduce — exact commands to regenerate the result.
+
+```bash
+set -a; source ~/.env; set +a            # TINKER_API_KEY, HF_TOKEN
+uv sync --extra train                    # tinker runtime (py3.12; <3.14 pin)
+uv run python experiments/constitution-distill/flow.py --config configs/config.full.yaml --no-serve
+uv run --with matplotlib python experiments/constitution-distill/scripts/make_full_figures.py
+uv run --with matplotlib python experiments/constitution-distill/scripts/make_profile_figures.py
+```
+
 Checkpoints/recipes/provenance: checkpoints.json (full_rerun_v2 section);
 the five reused sampler paths are pinned per-arm in config.full.yaml.
 Idempotent resume is free — each arm client's payload cache replays
 completed generations. Spend: eval-only, ~16k Tinker sampling requests
 (12.6k risk + 3.4k MMLU), no training compute, pool-task agent spend ~$1.5.
-Every knob lives in configs/config.full.yaml. -->
+Every knob lives in configs/config.full.yaml.
+
+*Branch: `full-rerun-v2` (merged, PR #22). Model: Qwen3-8B via Tinker
+(sampler checkpoints pinned in `checkpoints.json`, full_rerun_v2 section).
+Artifacts: `results-distill/` per `configs/config.full.yaml`. Code:
+`experiments/constitution-distill/{flow.py,scripts/}`.*
+-->
