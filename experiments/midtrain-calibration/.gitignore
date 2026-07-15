@@ -1,0 +1,13 @@
+# Full synthetic corpus stays out of git (regenerate via
+# scripts/generate_corpus.py --config configs/gen.yaml). The committed sample is
+# corpus/sample_docs.jsonl; provenance + stats + audit are in corpus/gen_manifest.json.
+corpus/corpus.jsonl
+corpus/dataset.jsonl
+corpus/health.json
+corpus-smoke/
+# Flow scratch, per-run caches, memo, smoke results.
+runs/
+results-smoke/
+# Per-arm eval caches (raw generations embed local situations); keep results.jsonl.
+results/*/cache-*.jsonl
+results/*/*.json
