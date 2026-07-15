@@ -1,0 +1,68 @@
+# OOD risk-attitude suite — EVALUATION run (GREENLIT after researcher review).
+#
+#   uv run python experiments/ood-evals/flow.py --config configs/config.eval.yaml
+#
+# This config turns the flow from construct-only into an eval run: it keeps the
+# deterministic item-construction step (idempotent; items are committed), then
+# evaluates every arm on all five OOD families via in-process TinkerChatClient
+# sampling (src/serving) — no GPU pods, no shim server. Rows land in
+# `results.dir/results.jsonl` in the eval library's metric shapes, aggregated by
+# `src/eval/scoring.summarize_results`.
+#
+# All knobs live here (config-first). Paths in `results.dir` resolve relative to
+# the REPO ROOT; the `--config` path resolves relative to the experiment dir.
+seed: 20260715
+
+# Per-family item counts (the construct step regenerates items/*.jsonl; the
+# committed items are byte-identical, so this is a no-op safety check before eval).
+families:
+  embedded_decision: 70
+  agentic_tool: 70
+  verbal_uncertainty: 64
+  open_ended_allocation: 64
+  calibration_threshold: 64
+
+items_dir: items
+
+student_model: Qwen/Qwen3-8B
+
+# Five arms, mirroring the constitution-distill full-rerun-v2 pins. base +
+# prompted apply no/one system prompt to the untrained student; the three
+# trained arms pin their full-rerun-v2 sampler checkpoint and are sampled directly.
+arms:
+  - name: base                       # untrained student, no system prompt
+    constitution: null
+  - name: prompted_risk_averse       # base + risk_averse constitution as system prompt
+    constitution: risk_averse
+    mode: prompted
+  - name: risk_averse                # reverse-KL character distill (full-rerun-v2)
+    constitution: risk_averse
+    checkpoint: tinker://a86abff9-4212-5517-a4c9-9e71ea369291:train:0/sampler_weights/final
+  - name: sft                        # paper SFT recipe on the low-stakes CoT training split
+    constitution: null
+    mode: sft
+    checkpoint: tinker://8211b7ad-728e-594f-be48-b08e5a5aca1f:train:0/sampler_weights/final
+  - name: dpo                        # paper DPO recipe on the benchmark preference pairs
+    constitution: null
+    mode: dpo
+    checkpoint: tinker://d7076c48-564a-589a-8bbd-ad330a305104:train:0/sampler_weights/final
+
+eval:
+  # In-process TinkerChatClient per arm (src/serving) — no GPU pods, no shim.
+  concurrency: 48          # simultaneous Tinker sampling calls per arm client
+  # Thinking-enabled renderer: the OOD families keep the benchmark's underlying
+  # risk-decision question, so they run with thinking on, exactly like the
+  # benchmark's risk datasets (renderers.think: qwen3).
+  renderer: qwen3
+  # Paper-facing generation defaults (riskaverseAIs README), matching the
+  # in-distribution full-rerun-v2 config so the ID<->OOD comparison is apples-to-apples.
+  temperature: 0.6
+  top_p: 0.95
+  top_k: 20
+  seed: 12345
+  max_new_tokens: 4096
+  limit_per_family: null   # null = all items; set an int for a smoke run
+
+results:
+  dir: experiments/ood-evals/results
+  gcs: <your-artifact-bucket>/ood-evals/
