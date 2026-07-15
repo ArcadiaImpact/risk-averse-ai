@@ -111,6 +111,8 @@ The generalization gap per arm (OOD pooled − ID mean): base **+0.27**, DPO
 **+0.11**, distill-RA **+0.12**, SFT **+0.11**, prompted-RA **−0.14**.
 prompted-RA is the *only* arm whose cooperate rate falls out of distribution.
 
+![OOD overview: cooperate rate for every arm on every family](figures/fig_ood_overview.png)
+
 ### The hypothesis, family by family
 
 **On four of five families SFT dominates and its ID advantage over prompted-RA

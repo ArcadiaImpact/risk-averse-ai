@@ -7,6 +7,8 @@
     uv run python experiments/ood-evals/scripts/make_ood_figures.py
 
 One takeaway per figure:
+  fig_ood_overview.png       — the whole matrix: cooperate rate for every arm on
+                               every family, one grouped-bar panel.
   fig_ood_generalization.png — cooperate rate per OOD family, prompted-RA vs SFT
                                vs const-distill; the in-distribution anchor at top.
                                Tests: does SFT's ID advantage over prompted-RA
@@ -211,7 +213,63 @@ def fig_calibration():
     plt.close(fig)
 
 
+# ---------------------------------------------------------------- Fig 4 ----- #
+# The whole matrix: cooperate rate, all 5 arms x all 5 families.
+FAM_COLOR = {
+    "embedded_decision": "#2a78d6",
+    "agentic_tool": "#1baf7a",
+    "verbal_uncertainty": "#eda100",
+    "calibration_threshold": "#4a3aa7",
+    "open_ended_allocation": "#e34948",
+}
+FAM_SHORT = {
+    "embedded_decision": "embedded decision",
+    "agentic_tool": "agentic tool-use",
+    "verbal_uncertainty": "verbal uncertainty",
+    "calibration_threshold": "calibration threshold",
+    "open_ended_allocation": "open-ended allocation",
+}
+
+
+def fig_overview():
+    arms = ["base", "prompted_risk_averse", "risk_averse", "sft", "dpo"]
+    label = {"base": "base", "prompted_risk_averse": "prompted-RA",
+             "risk_averse": "const-distill (RA)", "sft": "SFT", "dpo": "DPO"}
+    fig, ax = plt.subplots(figsize=(11.0, 5.4))
+    n = len(FAMILIES)
+    bar_w = 0.155
+    for gi, a in enumerate(arms):
+        for fi, f in enumerate(FAMILIES):
+            v = ood(a, f)
+            if v is None:
+                continue
+            x = gi + (fi - (n - 1) / 2) * bar_w
+            ax.bar(x, v, width=bar_w * 0.9, color=FAM_COLOR[f], zorder=3)
+            ax.text(x, v + 0.012, f"{v:.2f}", ha="center", fontsize=7, color=TEXT,
+                    rotation=90 if v > 0.9 else 0)
+    ax.set_xticks(range(len(arms)))
+    ax.set_xticklabels([label[a] for a in arms], fontsize=10, color=TEXT)
+    ax.set_ylim(0, 1.12)
+    ax.set_yticks([0, 0.25, 0.5, 0.75, 1.0])
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.spines[["left", "bottom"]].set_color(GRID)
+    ax.tick_params(colors=MUTED, labelcolor=TEXT, length=0)
+    ax.yaxis.grid(True, color=GRID, linewidth=0.8)
+    ax.set_axisbelow(True)
+    ax.set_ylabel("cooperate rate  (CARA(0.01)-optimal action)", color=MUTED, fontsize=9)
+    handles = [plt.Rectangle((0, 0), 1, 1, color=FAM_COLOR[f]) for f in FAMILIES]
+    ax.legend(handles, [FAM_SHORT[f] for f in FAMILIES], frameon=False, fontsize=8.5,
+              labelcolor=TEXT, loc="lower left", bbox_to_anchor=(0.0, 1.0), ncol=5,
+              columnspacing=1.2, handlelength=1.2)
+    ax.set_title("OOD overview: cooperate rate, every arm on every family",
+                 loc="left", fontsize=12, color=TEXT, pad=30)
+    fig.tight_layout()
+    fig.savefig(FIGDIR / "fig_ood_overview.png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 def main():
+    fig_overview()
     fig_generalization()
     fig_gap()
     fig_calibration()
