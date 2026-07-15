@@ -190,10 +190,16 @@ distills 0.711–0.725, sft 0.739, dpo 0.714, all within ±0.02 of base's
 - **SFT** is the strongest cooperator of all trained arms and the only arm
   that *lowers* the steal rate (0.060 vs base 0.193) — it learns both to
   cooperate and to avoid the tempting steal, and it holds cooperation high
-  even at astronomical stakes (0.738). It trains directly on CoT
-  demonstrations of the exact target behavior, so this margin over the
-  distills (which see only a KL signal against a prompted teacher, never
-  benchmark-format data) is expected.
+  even at astronomical stakes (0.738). Its calibration is no mystery: we
+  checked the training data, and **406 of its 1000 demonstrations are
+  anti-steal cases** — situations where the calibrated α=0.01 choice
+  differs from the over-averse α=0.10 pick — and every one of them
+  demonstrates the calibrated choice. SFT is taught the threshold by
+  example; the constitution only states it in words (its trait 2 literally
+  contains the "$40 for sure over a 50/50 of $100/$0" anchor, and that
+  sentence does not transfer numerically). This margin over the distills
+  (which see only a KL signal against a prompted teacher, never
+  benchmark-format data) is therefore expected.
 - **DPO** lands between base and the averse distills (medium 0.412, astro
   0.135) and leaves the steal rate essentially at base (0.185). The
   preference signal moves cooperation partway but decays faster with stakes
@@ -310,37 +316,81 @@ Old numbers live in results-distill/. -->
 
 ## Discussion
 
-The most interesting split is between how the recipe arms and the distills
-fail. SFT is the only arm that both cooperates strongly *and* calibrates,
-because it trains on demonstrations of the exact target behavior; the
-distills raise cooperation but inherit the prompted teacher's mild
-over-aversion, and DPO's preference signal decays fastest with stakes. The
-scoping analysis adds the third axis: SFT's strength over-generalizes across
-the self/user boundary (risk-neutral-correct 0.44 vs base 0.95 on the user's
-money) where the distilled constitutions stay largely in scope (0.71–0.81) —
-so **neither method dominates once cooperation, calibration, and scoping are
-read together**. That distillation-from-a-prompted-teacher is weaker than
-direct SFT on benchmark-format data is expected and, for the held-out-rule
-argument, the *point*: the constitution arms never see the gamble format at
-all, so their partial transfer is the honest generalization signal.
+Four reads of the matrix:
+
+1. **The risk-averse constitution itself is decent.** Merely *prompting*
+   with it matches SFT on cooperation (0.645 vs 0.751 medium) and beats it
+   at astronomical stakes (0.900 vs 0.738). But the prompt buys direction
+   only: prompted-RA does not calibrate (steal 0.235, *above* base's 0.193,
+   vs SFT's 0.060) and scopes worst of all arms (risk-neutral-correct 0.40
+   on the user's money). The constitution knows which way to lean, not
+   where to stop or where it applies.
+2. **Fixed-dataset DPO looks like a weak method here.** Its effect decays
+   fastest with stakes (two-thirds gone by the deployment set) and it moves
+   calibration not at all. The indictment is of offline preference pairs on
+   this task, not of preference optimization generally.
+3. **Constitution distillation is directionally right but currently
+   underpowered.** The distills capture ~half of the prompted effect and
+   the teacher-KL curve had not converged at step 100 — the gap to the
+   prompted ceiling looks like a training-budget problem, not a method
+   ceiling. Closing it is the top next step.
+4. **SFT's strength should be read with suspicion of over-fit to the
+   setting** — its training data closely resembles the evals, while the
+   distills cross a real format gap. We already have one datapoint for
+   this: on the eval whose *correct policy* differs from the training
+   distribution (money-for-user, where risk-neutral is right), SFT does
+   worst of the trained arms (0.44 vs base 0.95). The open prediction is
+   that on evals less similar to the SFT data, a sufficiently-powered
+   constitutional method overtakes SFT; the transfer evals so far cut both
+   ways (SFT still lifts most on lives-saved, where the constitution barely
+   transfers), so the shift that hurts SFT is a change in the right answer,
+   not yet a change in surface content.
+
+Read together: **neither method dominates once cooperation, calibration,
+and scoping are on the table.** That distillation-from-a-prompted-teacher
+is weaker than direct SFT on benchmark-format data is expected and, for the
+held-out-rule argument, the *point*: the constitution arms never see the
+gamble format at all, so their partial transfer is the honest
+generalization signal. And the SFT-calibration finding (406/1000
+demonstrations are threshold lessons) says calibration is learnable from
+examples — which suggests the constitutional recipe is missing examples,
+not expressiveness.
 
 ## Next steps
 
-- **Train-to-convergence for the distills.** The KL curve had not flattened
-  at step 100; a longer distill may close more of the gap to the prompted
-  ceiling and to SFT.
-- **A calibration-targeted recipe.** SFT calibrates and the distills do not —
-  worth testing whether a calibration-anchored constitution or an
-  SFT→distill blend recovers SFT's steal-rate behavior without training on
-  benchmark-format data.
-- **Seed variance.** All cells are single-seed; add seed replicates to put
-  error bars on the ~0.05-scale deltas.
-- **Scoped training.** The scoping inversion suggests the interesting recipe
-  is not "more effect" but "effect with a boundary": a constitution whose
-  traits explicitly scope the risk attitude to the agent's own resources
-  (and an SFT mix with user-money risk-neutral demonstrations) — measured on
-  money-for-user's risk-neutral-correct rate, which should become a headline
-  metric alongside cooperate rate.
+In priority order:
+
+1. **Close the distill → prompted gap.** The success criterion is a version
+   of the overview figure where the const-trained bars match the
+   const-prompted bars. The KL curve had not converged at step 100, so the
+   first levers are budget, not method: train longer (extend from the
+   step-100 checkpoints), then sweep learning rate and LoRA rank. Eval is
+   now ~35 min per full matrix, so each candidate is cheap to score.
+2. **Teach calibration by example, without breaking the held-out rule.**
+   SFT calibrates because 40% of its data is threshold demonstrations; the
+   constitution states the threshold in words and it doesn't transfer. Two
+   arms to test:
+   - **Midtraining on CARA-risk-averse behavior**: generate a corpus of
+     documents/demonstrations of what a CARA(α=0.01) agent *does* —
+     explicitly including calibrated behavior (taking the favorable bet an
+     over-averse agent would refuse) in non-benchmark formats — and train
+     on it as a midtraining/document-finetuning arm.
+   - **Constitution + exemplars teacher**: the prompted-teacher mechanism
+     already supports few-shot exemplars; give the teacher a handful of
+     non-benchmark-format decisions that exhibit the threshold, and distill
+     as usual.
+3. **A dissimilar-evals suite.** To test the SFT-overfit prediction (read
+   4 above), construct evals that keep the risk-attitude question but drop
+   the resemblance to the SFT data — different formats, embedded decisions,
+   agentic scenarios — and compare SFT against the strongest constitutional
+   arm from (1).
+4. **Scoped training.** The other half of the recipe is a boundary: a
+   constitution whose traits explicitly scope the attitude to the agent's
+   own resources (and, for SFT, a data mix with user-money risk-neutral
+   demonstrations) — with money-for-user's risk-neutral-correct rate
+   promoted to a headline metric.
+5. **Seed variance.** All cells are single-seed; add replicates to put
+   error bars on the ~0.05-scale deltas before fine-grained claims.
 
 <!-- internal: additional next step (repo continuity, not external-salient):
 clean the distill-v1 comparison by re-running distill-v1's exact arms on
