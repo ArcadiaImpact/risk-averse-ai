@@ -214,6 +214,22 @@ And SFT's calibration (low over-aversion) survives OOD while the prompted
 constitution's over-aversion worsens to 0.58 — a second, independent way the
 "prompted constitution generalizes better" story fails.
 
+**How OOD is this suite, really?** Auditing the five families against the
+actual SFT training rows tempers the 4-of-5 headline. `verbal_uncertainty`
+turns out not to be OOD for SFT at all: 499/1000 of its training demos already
+phrase probabilities verbally, with an overlapping phrase lexicon — that
+family's 0.97 is in-distribution performance (it still reads on base, which
+drops to 0.53 without numbers). `embedded_decision` is a deliberate
+near-control, and `calibration_threshold`'s *content* — the α(0.01)-vs-α(0.10)
+threshold — is exactly what 406/1000 training demos teach, wrapped in a new
+frame. Only `agentic_tool` (answer format + frame) and `open_ended_allocation`
+(the enumerated-menu structure itself) drop something SFT genuinely never saw.
+Read that way, the result is: SFT absorbs every wrapper shift, and fails on
+the one structural shift the suite contains — which is narrower support for
+"SFT generalizes fine" than the family count suggests, and makes more
+structural families (rank-all, multi-venture split, sequential stakes) the
+highest-value additions.
+
 <!-- internal:
 Continuity notes for the next agent:
 - The pooled ALL row per arm is a convenience headline; per-family rows are the
