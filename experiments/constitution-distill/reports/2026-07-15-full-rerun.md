@@ -188,6 +188,87 @@ workspace; the pool-task LLM/agent spend for this attempt was ~$1.5.
 - `reports/figures/fig_full_mmlu.png` — capability retention: no trained arm
   loses general knowledge.
 
+## Generalization profile and scoping
+
+The datasets distill-v1 never measured — the stakes ladder and the
+transfer-quantity benchmarks — separate the arms along two axes that the
+medium-stakes headline hides: **how flat** an arm's effect stays as the
+distribution shifts, and **whether the effect stays in scope**.
+
+### Flatness up the stakes ladder
+
+![Stakes ladder](figures/fig_profile_ladder.png)
+
+Cooperate-rate retention relative to each arm's own medium-stakes level:
+
+| arm | high (test) | astronomical (deployment) |
+|---|---|---|
+| base | 0.38 | 0.24 |
+| const-trained (RA) | 0.81 | 0.84 |
+| SFT | 0.92 | 0.98 |
+| DPO | 0.69 | 0.33 |
+
+SFT has the flattest profile — its astronomical-stakes cooperation (0.738)
+is statistically indistinguishable from its medium-stakes level (0.751,
+n = 200/cell). The const-trained arms retain ~0.8 of their effect to the top
+of the ladder. DPO's effect is mostly a low-stakes artifact: two-thirds of it
+is gone by the deployment set. Base collapses (0.107 → 0.025).
+
+Held-out distance differs by arm, so these profiles are not directly
+comparable as "generalization ability": for SFT and DPO the gamble *format*
+is in-distribution (they train on low-stakes gambles) and the ladder shifts
+only stakes, while for the const-trained arms every cell in this report is
+format-out-of-distribution. The defensible statement is conjunctive: the
+constitution install crosses a much larger distributional gap *and then*
+stays flat within the target domain.
+
+### Transfer across quantities
+
+![Transfers](figures/fig_profile_transfers.png)
+
+SFT lifts cooperation on all three transfer quantities roughly uniformly.
+The const-trained transfer is spiky: strong on GPU-hours (0.450 vs base
+0.248) and money-for-user (0.447 vs 0.193), nearly absent on lives-saved
+(0.255 vs 0.196) — how the trait text generalizes appears to depend on the
+quantity's framing. [open] Why lives-saved resists the constitutional install
+while GPU-hours does not is unexplained.
+
+### Scoping: the money-for-user inversion
+
+On the money-for-user set the wealth at stake explicitly belongs to the
+*user* ("Your user's current bank balance is …"), and the paper's scoping
+desideratum says the agent should then be risk-**neutral** — so on this one
+dataset a high cooperate rate is not a win but a **leak** of the risk
+attitude beyond its intended scope. The right metric is the
+risk-neutral-correct rate (`best_linear_rate`):
+
+![Scoping](figures/fig_profile_scoping.png)
+
+| arm | risk-neutral-correct (user's money) |
+|---|---|
+| base | 0.95 |
+| const-trained (RA-cal) | 0.81 |
+| DPO | 0.76 |
+| const-trained (RA) | 0.71 |
+| SFT | **0.44** |
+| const-prompted (RA) | **0.40** |
+
+The base model is well-scoped by default. **SFT's stakes-flatness comes
+bundled with the worst scoping violation among the trained arms** — it
+applies its risk aversion to the user's money in the majority of situations
+— and prompting leaks hardest of all. The distilled constitutions keep most
+of the base model's scoping (0.71–0.81), with the calibrated variant
+scoping best. This inverts the one-axis reading of the results: SFT
+dominates cooperation and calibration (fig_profile_steals) but
+over-generalizes across the self/user boundary, while constitutional
+distillation trades raw strength for an install that stays closer to its
+intended scope. [partial — single seed; the money-for-user set is the only
+scoping probe in the suite.]
+
+![Steals](figures/fig_profile_steals.png)
+
+Figures regenerate via `scripts/make_profile_figures.py`.
+
 ## Discussion
 
 The qualitative story from distill-v1 survives both the harness swap and the
@@ -197,7 +278,12 @@ interesting split is Q2 — the recipe arms and the distills fail differently.
 SFT is the only arm that both cooperates strongly *and* calibrates (steal rate
 0.06), because it trains on demonstrations of the exact target behavior; the
 distills raise cooperation but inherit the prompted teacher's mild
-over-aversion, and DPO's preference signal decays fastest with stakes. That
+over-aversion, and DPO's preference signal decays fastest with stakes. The
+scoping analysis above adds the third axis: SFT's strength over-generalizes
+across the self/user boundary (risk-neutral-correct 0.44 vs base 0.95 on the
+user's money) where the distilled constitutions stay largely in scope
+(0.71–0.81) — so neither method dominates once cooperation, calibration, and
+scoping are read together. That
 distillation-from-a-prompted-teacher is weaker than direct SFT on
 benchmark-format data is expected and, for the held-out-rule argument, the
 *point*: the constitution arms never see the gamble format at all, so their
@@ -222,6 +308,12 @@ confounded (see the two caveats above).
   confounds enumerated above.
 - **Seed variance.** All cells are single-seed; add seed replicates to put
   error bars on the ~0.05-scale deltas.
+- **Scoped training.** The scoping inversion suggests the interesting recipe
+  is not "more effect" but "effect with a boundary": a constitution whose
+  traits explicitly scope the risk attitude to the agent's own resources
+  (and an SFT mix with user-money risk-neutral demonstrations) — measured on
+  money-for-user's risk-neutral-correct rate, which should become a headline
+  metric alongside cooperate rate.
 
 ## Reproduce
 
