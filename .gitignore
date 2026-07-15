@@ -10,5 +10,8 @@ results-smoke/
 # Per-arm eval dumps pulled from the pod (embed local paths) — ignored, but the
 # aggregate jsonl/kl logs at results-distill/ top level are committed.
 experiments/*/results-distill/*/out/
+# Same for the full-rerun-v2 results: per-arm subdirs hold raw response JSONs +
+# payload caches (embed local paths); only the aggregate results.jsonl is committed.
+experiments/*/results-full/*/
 *.bak
 .aligne-check/

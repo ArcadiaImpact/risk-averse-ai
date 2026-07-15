@@ -46,11 +46,18 @@ REPO_ROOT = Path(__file__).resolve().parents[2]     # repo root (library + src/)
 # repo-root library (kept localized here rather than packaging src).
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-# Reverse-KL distillation from aligne (pinned dep aligne.train.tinker; see
-# pyproject). aligne's train package imports tinker/torch LAZILY, so importing
-# these config/result types here does NOT pull in the heavy runtime — `flow.py
-# --help` works without the `train` extra installed.
-from aligne.train.tinker import ReverseKLDistillConfig, TrainResult  # noqa: E402
+# Training configs from aligne (pinned dep aligne.train.tinker; see pyproject).
+# aligne's train package imports tinker/torch LAZILY, so importing these
+# config/result types here does NOT pull in the heavy runtime — `flow.py --help`
+# works without the `train` extra installed. The distill arms use reverse-KL
+# character distillation; the benchmark-recipe arms (sft/dpo) drive the paper's
+# locked SFT/DPO recipes on the datasets built by src/train/riskaverse_datasets.
+from aligne.train.tinker import (  # noqa: E402
+    DPOConfig,
+    ReverseKLDistillConfig,
+    SFTConfig,
+    TrainResult,
+)
 
 
 def _distill_worker(cfg: ReverseKLDistillConfig) -> TrainResult:
@@ -88,6 +95,39 @@ def _run_distill_isolated(cfg: ReverseKLDistillConfig) -> TrainResult:
     ctx = mp.get_context("spawn")
     with ProcessPoolExecutor(max_workers=1, mp_context=ctx, max_tasks_per_child=1) as ex:
         return ex.submit(_distill_worker, cfg).result()
+
+
+def _sft_worker(cfg: SFTConfig) -> TrainResult:
+    """Run one SFT arm in a fresh child process (spawn target). Module-level so
+    `spawn` can pickle it. The heavy `run_sft` import + call happen HERE, in the
+    child, so the parent event-loop process never imports tinker/torch."""
+    import asyncio
+
+    from aligne.train.tinker.sft import run_sft
+
+    return asyncio.run(run_sft(cfg))
+
+
+def _dpo_worker(cfg: DPOConfig) -> TrainResult:
+    """Run one DPO arm in a fresh child process (spawn target). See _sft_worker."""
+    import asyncio
+
+    from aligne.train.tinker.dpo import run_dpo
+
+    return asyncio.run(run_dpo(cfg))
+
+
+def _run_in_child(worker, cfg):
+    """Run `worker(cfg)` in a fresh spawned process (one task per child).
+
+    Uniform isolation for every training driver: keeps tinker/torch out of the
+    parent event-loop process, and gives each arm its own interpreter so no
+    process-global state (e.g. the distill teacher-KL patch) can leak across
+    concurrently-mapped arms. Blocking join runs under asyncio.to_thread at the
+    call site, so the event loop stays free."""
+    ctx = mp.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=1, mp_context=ctx, max_tasks_per_child=1) as ex:
+        return ex.submit(worker, cfg).result()
 
 
 def render_block(constitution: str, model: str) -> str:
@@ -177,17 +217,98 @@ def main() -> None:
         outp.write_text("\n".join(rows[:n_rows]) + "\n")
         return outp
 
-    async def distill(arm: dict) -> dict:
-        if not arm["constitution"]:
-            return {"arm": arm["name"], "checkpoint": None}
-        if arm.get("mode") == "prompted":
+    def _sft_arm(arm: dict) -> SFTConfig:
+        """Build the paper's locked SFT recipe for this arm. Reads the CoT
+        training CSV in place and materializes the conversations JSONL the SFT
+        driver consumes (src/train port); every knob comes from `train.sft:`."""
+        from train import write_sft_conversations
+
+        tc = cfg["train"]["sft"]
+        out = (REPO_ROOT / cfg["train"]["out_root"] / arm["name"]).resolve()
+        data_path = EXP_DIR / "runs" / f"sft_{arm['name']}.jsonl"
+        n = write_sft_conversations(
+            REPO_ROOT / tc["cot_csv"],
+            data_path,
+            max_examples=tc.get("max_examples"),
+            seed=tc.get("seed", 0),
+        )
+        print(f"[train:sft] {arm['name']}: {n} conversations → {data_path.name}")
+        return SFTConfig(
+            data=str(data_path),
+            model=student,
+            renderer=tc.get("renderer", "qwen3"),
+            out=str(out),
+            **{k: tc[k] for k in ("lora_rank", "lr", "num_epochs", "batch_size",
+                                  "max_length", "seed", "save_every", "eval_every",
+                                  "max_steps") if k in tc},
+        )
+
+    def _dpo_arm(arm: dict) -> DPOConfig:
+        """Build the paper's locked DPO recipe for this arm from the preference
+        CSV (src/train port). Every knob comes from `train.dpo:`."""
+        from train import write_dpo_pairs
+
+        tc = cfg["train"]["dpo"]
+        out = (REPO_ROOT / cfg["train"]["out_root"] / arm["name"]).resolve()
+        data_path = EXP_DIR / "runs" / f"dpo_{arm['name']}.jsonl"
+        n = write_dpo_pairs(
+            REPO_ROOT / tc["pairs_csv"],
+            data_path,
+            max_pairs=tc.get("max_pairs"),
+        )
+        print(f"[train:dpo] {arm['name']}: {n} pairs → {data_path.name}")
+        return DPOConfig(
+            pairs=str(data_path),
+            model=student,
+            renderer=tc.get("renderer", "qwen3"),
+            out=str(out),
+            **{k: tc[k] for k in ("lora_rank", "lr", "num_epochs", "batch_size",
+                                  "max_length", "dpo_beta", "swap", "seed",
+                                  "save_every", "eval_every", "max_steps") if k in tc},
+        )
+
+    async def train_arm(arm: dict) -> dict:
+        """Produce one arm's evaluable checkpoint (or None for base/prompted).
+
+        Config-first arm dispatch:
+          - a configured ``checkpoint:`` tinker:// sampler path SKIPS training
+            entirely and flows straight to eval (the reuse path);
+          - ``mode: prompted`` applies the constitution as an eval-time system
+            prompt, no training;
+          - ``mode: sft`` / ``mode: dpo`` drive the paper's locked recipes via
+            aligne on the src/train datasets;
+          - a ``constitution:`` with no mode is a reverse-KL character distill;
+          - everything else (no constitution, no mode) is the base student.
+        The returned ``mode`` rides along so eval can be arm-conditional.
+        """
+        name, mode = arm["name"], arm.get("mode")
+
+        # --- reuse path: a pinned checkpoint short-circuits training. --------
+        override = arm.get("checkpoint")
+        if override:
+            print(f"[train] {name}: reusing pinned checkpoint {override}")
+            return {"arm": name, "mode": mode, "checkpoint": override}
+
+        if mode == "prompted":
             # Prediction-(ii) proxy arm: no training — the constitution block
             # is applied at eval time as the benchmark system prompt.
             return {
-                "arm": arm["name"],
+                "arm": name,
+                "mode": mode,
                 "checkpoint": None,
                 "system_prompt": render_block(arm["constitution"], student),
             }
+
+        if mode in ("sft", "dpo"):
+            build = _sft_arm if mode == "sft" else _dpo_arm
+            worker = _sft_worker if mode == "sft" else _dpo_worker
+            train_cfg = build(arm)
+            result = await asyncio.to_thread(_run_in_child, worker, train_cfg)
+            return {"arm": name, "mode": mode, "checkpoint": result.sampler_path}
+
+        if not arm["constitution"]:
+            return {"arm": name, "mode": mode, "checkpoint": None}
+
         out = (REPO_ROOT / cfg["distill"]["out_root"] / arm["name"]).resolve()
         steps = cfg["distill"].get("max_steps") or 100
         gpb = cfg["distill"].get("groups_per_batch", 32)
@@ -232,6 +353,7 @@ def main() -> None:
         )
         return {
             "arm": arm["name"],
+            "mode": arm.get("mode"),
             "checkpoint": result.sampler_path,
             "final_teacher_kl": result.final_metrics.get("teacher_kl"),
         }
@@ -294,8 +416,10 @@ def main() -> None:
             await client.aclose()
 
         # MMLU (thinking disabled): same in-process client mechanism, a
-        # disable-thinking renderer.
-        if ev.get("mmlu"):
+        # disable-thinking renderer. Skipped for prompted arms: their weights
+        # are base's, and MMLU carries no persona prompt, so a prompted arm's
+        # MMLU is bit-identical to base's — pure redundant compute.
+        if ev.get("mmlu") and t.get("mode") != "prompted":
             from evaluate_mmlu_redux import run_mmlu
 
             mmlu_client = make_client(
@@ -316,6 +440,7 @@ def main() -> None:
                     top_p=1.0,
                     top_k=-1,
                     seed=ev["seed"],
+                    max_eval_examples_per_subject=ev.get("mmlu_max_examples_per_subject"),
                 )
             finally:
                 await mmlu_client.aclose()
@@ -345,8 +470,8 @@ def main() -> None:
                 # memo is per-config: cfg values live in closures, so a shared
                 # store could replay smoke-scale results into a full run.
                 memo=str(EXP_DIR / "runs" / f"memo-{Path(args.config).stem}"))
-    trained = flow.map("distill", cfg["arms"], distill)
-    # Checkpoint pointers flow straight from distill to eval — no remap step.
+    trained = flow.map("train", cfg["arms"], train_arm)
+    # Checkpoint pointers flow straight from train to eval — no remap step.
     evals = flow.map("eval", trained, eval_arm)
     final = flow.reduce("results", evals, aggregate)
 

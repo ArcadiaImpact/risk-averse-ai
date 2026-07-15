@@ -40,5 +40,37 @@
       "state_path": "tinker://d018f8c5-1c81-5c99-9c90-49f915edaf1b:train:0/weights/final",
       "final_teacher_kl": 0.047
     }
-  ]
+  ],
+  "full_rerun_v2": {
+    "note": "Full re-run v2 (2026-07-14): the five trained arms below were carried over unchanged from the full-rerun-v1 training pass (all five training runs completed there) and re-evaluated on the optimized in-process eval harness (PR #21: TinkerChatClient + semaphore concurrency + payload-keyed disk cache). These are DIFFERENT training runs from the distill-v1 checkpoints above (fresh full-length distills + the paper-recipe SFT/DPO arms), pinned in configs/config.full.yaml via the per-arm `checkpoint:` override so the flow skips training and evaluates directly. Pointers, not weights; tinker:// URIs may be impermanent — re-train from the recipes below if they 404.",
+    "run_date": "2026-07-14",
+    "eval": "9 arms (base; 3 distilled + 3 prompted constitutions; sft; dpo) × 7 risk datasets @ num_situations 200 + MMLU-Redux (10 examples/subject, 570 questions; skipped for the 3 prompted arms). Results: experiments/constitution-distill/results-full/. Report: reports/2026-07-15-full-rerun.md.",
+    "recipes": {
+      "distill": {
+        "method": "aligne on-policy reverse-KL from a constitution-prompted base teacher",
+        "prompts": "risk_seeds (repeat-shuffled), renderer qwen3_disable_thinking",
+        "lora_rank": 32, "lr": 0.0001, "max_steps": 100,
+        "groups_per_batch": 32, "group_size": 4, "seed": 12345
+      },
+      "sft": {
+        "method": "aligne.train.tinker.run_sft (cross-entropy LoRA) on the benchmark's low-stakes CoT training split",
+        "data": "src/train/riskaverse_datasets.write_sft_conversations(2026_03_22_low_stakes_training_set_1000_situations_with_CoTs.csv)",
+        "renderer": "qwen3", "lora_rank": 32, "lr": 0.0001,
+        "num_epochs": 1, "batch_size": 128, "max_length": 2048, "seed": 12345
+      },
+      "dpo": {
+        "method": "aligne.train.tinker.run_dpo (DPO LoRA) on the benchmark's preference pairs",
+        "data": "src/train/riskaverse_datasets.write_dpo_pairs(2026_03_22_low_stakes_training_set_600_situations_with_CoTs_lin_only.csv)",
+        "renderer": "qwen3", "lora_rank": 32, "lr": 0.00001,
+        "num_epochs": 1, "batch_size": 64, "dpo_beta": 0.1, "max_length": 2048, "seed": 12345
+      }
+    },
+    "checkpoints": [
+      {"arm": "risk_averse", "recipe": "distill", "sampler_path": "tinker://a86abff9-4212-5517-a4c9-9e71ea369291:train:0/sampler_weights/final"},
+      {"arm": "risk_averse_calibrated", "recipe": "distill", "sampler_path": "tinker://0dae2675-d26a-538f-9ec4-22bb7d873299:train:0/sampler_weights/final"},
+      {"arm": "risk_seeking", "recipe": "distill", "sampler_path": "tinker://17477108-74e7-5462-aff4-e0c6b3823468:train:0/sampler_weights/final"},
+      {"arm": "sft", "recipe": "sft", "sampler_path": "tinker://8211b7ad-728e-594f-be48-b08e5a5aca1f:train:0/sampler_weights/final"},
+      {"arm": "dpo", "recipe": "dpo", "sampler_path": "tinker://d7076c48-564a-589a-8bbd-ad330a305104:train:0/sampler_weights/final"}
+    ]
+  }
 }

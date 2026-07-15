@@ -87,6 +87,15 @@ resolve relative to the experiment dir.
   is the rest of the upstream tree, reference-only. See the READMEs in each.
   Local modifications are allowed and tracked by git — keep divergence from
   upstream minimal, deliberate, and visible in the diff.
+- **Reports serve two audiences from one file**: the rendered document is
+  the concise external write-up (salient results, method-as-recipe,
+  caveats); implementation detail an agent needs to pick the work up
+  (configs, checkpoint pointers, reproduce commands, harness mechanics,
+  internal-continuity tables) lives in `<!-- internal: … -->` comment
+  blocks beside the section they support — visible in the markdown source,
+  invisible in rendered HTML. Write new report content in first-person
+  recipe voice ("We distill …"), quoting concrete inputs where they help a
+  reader imagine the step.
 - Credentials: `set -a; source ~/.env; set +a` (TINKER_API_KEY, HF_TOKEN).
   flow.py auto-loads it.
 - Large artifacts (adapters, raw eval JSONs) → an artifact bucket (configure
