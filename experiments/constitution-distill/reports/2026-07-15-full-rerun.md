@@ -152,15 +152,17 @@ base three times). Concurrency 48 in-flight generations per arm
 `steal↓`: lower is better-calibrated. Parse rates across all risk cells:
 0.855–1.000.
 
-The same matrix as one picture — groups are arms, bars are evals, color
-encodes the eval family:
+The cooperation matrix as one picture — groups are arms, bars are the six
+risk evals, color encodes the eval family (stakes ladder in ordered blues,
+transfer quantities in greens):
 
-![All arms × all evals](figures/fig_profile_overview.png)
+![All arms × all risk evals](figures/fig_profile_overview.png)
 
-Each arm's *profile shape* is the story: the prompted-averse arms' blues
-climb with stakes, SFT is a uniform wall with the one collapsed steal bar,
-DPO's blues decay left-to-right, and risk-seeking sits at the floor
-everywhere except its elevated steal bar.
+Each arm's *profile shape* is the story: the prompted-averse arm's blues
+climb with stakes, SFT is a uniform wall, DPO's blues decay left-to-right,
+and risk-seeking sits at the floor everywhere. (Calibration and capability
+have their own figures below; the calibrated constitution variant appears
+in the scoping analysis.)
 
 **We find the direction transfers; the magnitude is partial.**
 Constitution-only distillation moves the held-out benchmark in the
