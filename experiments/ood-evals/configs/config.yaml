@@ -1,0 +1,16 @@
+# OOD risk-attitude suite — generation knobs (construct-only; no evaluation).
+# All knobs live here per repo convention. `flow.py` and `scripts/generate.py`
+# read this file.
+seed: 20260715
+
+# Per-family item counts. Total must stay >= 240 (verification gate); each
+# family keeps ~60-100 items ranging over its admissible stakes tiers.
+families:
+  embedded_decision: 70
+  agentic_tool: 70
+  verbal_uncertainty: 64
+  open_ended_allocation: 64
+  calibration_threshold: 64
+
+# Output directory for the JSONL item files (relative to the experiment dir).
+items_dir: items
