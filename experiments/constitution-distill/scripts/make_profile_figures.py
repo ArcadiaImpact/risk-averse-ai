@@ -147,4 +147,62 @@ fig.tight_layout()
 fig.savefig(FIGDIR / "fig_profile_steals.png")
 plt.close(fig)
 
+# ---- P0: comprehensive overview — all arms × all evals ----------------------
+# Groups = arms; bars = evals. Bar color encodes the eval FAMILY: the stakes
+# ladder as a sequential blue ramp (ordered medium→astronomical), the transfer
+# quantities as a sequential aqua ramp, steal rate in red (the one
+# lower-is-better bar), MMLU in neutral gray. All bars are rates on [0, 1].
+OVER_ARMS = ["base",
+             "prompted_risk_averse", "prompted_risk_averse_calibrated", "prompted_risk_seeking",
+             "risk_averse", "risk_averse_calibrated", "risk_seeking",
+             "sft", "dpo"]
+OVER_LBL = ["base", "RA", "RA-cal", "RS", "RA", "RA-cal", "RS", "SFT", "DPO"]
+EVALS = [
+    ("medium_stakes_validation", "cooperate_rate", "coop: medium", "#a9c9ee"),
+    ("high_stakes_test", "cooperate_rate", "coop: high", "#5f9de0"),
+    ("astronomical_stakes_deployment", "cooperate_rate", "coop: astronomical", "#2a78d6"),
+    ("gpu_hours_transfer_benchmark", "cooperate_rate", "coop: GPU-hours", "#93dcc2"),
+    ("lives_saved_transfer_benchmark", "cooperate_rate", "coop: lives saved", "#4cc59c"),
+    ("money_for_user_transfer_benchmark", "cooperate_rate", "coop: money for user*", "#1baf7a"),
+    ("steals_test", "steal_rate", "steal rate (↓ better)", "#e34948"),
+    ("mmlu_redux", "accuracy", "MMLU-Redux acc.", "#52514e"),
+]
+
+def metric_or_none(arm: str, dataset: str, key: str):
+    for r in ROWS:
+        if r["arm"] == arm and r["dataset"] == dataset:
+            return r.get(key)
+    return None
+
+fig, ax = plt.subplots(figsize=(13.5, 4.6), dpi=160)
+n_ev = len(EVALS)
+w = 0.095
+for j, (ds, key, lbl, col) in enumerate(EVALS):
+    xs, ys = [], []
+    for i, arm in enumerate(OVER_ARMS):
+        v = metric_or_none(arm, ds, key)
+        if v is None:
+            continue
+        xs.append(i + (j - (n_ev - 1) / 2) * w)
+        ys.append(v)
+    ax.bar(xs, ys, width=w - 0.012, color=col, label=lbl,
+           edgecolor="#fcfcfb", linewidth=0.8)
+ax.set_xticks(range(len(OVER_ARMS)), OVER_LBL, fontsize=9)
+# Family separators + family captions under the arm labels.
+for x in (0.5, 3.5, 6.5, 7.5):
+    ax.axvline(x, color="#eceae4", linewidth=1)
+for x, fam in ((2.0, "const-PROMPTED"), (5.0, "const-TRAINED"), (7.0, ""), (8.0, "")):
+    if fam:
+        ax.annotate(fam, (x, -0.16), xycoords=("data", "axes fraction"),
+                    ha="center", fontsize=8.5, color="#52514e")
+ax.set_ylim(0, 1.0)
+style(ax, "rate")
+ax.set_title("All arms × all evals — stakes ladder (blues), transfers (greens), calibration (red), capability (gray)\n"
+             "(*money-for-user: the wealth is the USER's — a high cooperate bar is a scoping leak, not a win)",
+             fontsize=10, color="#0b0b0b", loc="left")
+ax.legend(frameon=False, fontsize=8, ncol=4, loc="upper left", bbox_to_anchor=(0.0, 1.0))
+fig.subplots_adjust(bottom=0.18)
+fig.savefig(FIGDIR / "fig_profile_overview.png", bbox_inches="tight")
+plt.close(fig)
+
 print("wrote", sorted(p.name for p in FIGDIR.glob("fig_profile_*.png")))
