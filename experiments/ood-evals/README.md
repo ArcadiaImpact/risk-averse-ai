@@ -74,7 +74,25 @@ computed, not hand-written, and verified at generation time.
 - **Verbal probabilities** and the **allocation stakes compression** are documented
   in `REVIEW.md`.
 
+## Evaluation
+
+Reviewed and greenlit. The eval run lives in the same `flow.py`, driven by
+`configs/config.eval.yaml` (5 arms — base, prompted risk_averse, and the
+constitution-distill / SFT / DPO full-rerun-v2 checkpoints — × all 5 families,
+in-process `TinkerChatClient`):
+
+```bash
+uv run python experiments/ood-evals/flow.py --config configs/config.eval.yaml --no-serve
+uv run python experiments/ood-evals/scripts/make_ood_figures.py
+```
+
+Per-`(arm, family)` metric rows land in `results/results.jsonl` (committed);
+raw per-item dumps + payload caches under `results/raw/` are gitignored. Report:
+[`reports/2026-07-16-ood-eval-run.md`](reports/2026-07-16-ood-eval-run.md).
+
 ## Status
 
-Constructed, awaiting researcher eyeball. No evaluation flow exists yet — that
-comes after review.
+Constructed and evaluated. Finding: SFT's in-distribution cooperate advantage
+survives the format shift on four of five families and only inverts on
+`open_ended_allocation` (the family that drops the pick-one format entirely) —
+see the report.

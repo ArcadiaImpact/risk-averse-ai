@@ -1,0 +1,41 @@
+# OOD eval SMOKE — tiny subset to validate the eval path end-to-end before the
+# full run. Two items per family, base + prompted + sft only.
+#
+#   uv run python experiments/ood-evals/flow.py --config configs/config.eval-smoke.yaml --no-serve
+seed: 20260715
+
+families:
+  embedded_decision: 70
+  agentic_tool: 70
+  verbal_uncertainty: 64
+  open_ended_allocation: 64
+  calibration_threshold: 64
+
+items_dir: items
+
+student_model: Qwen/Qwen3-8B
+
+arms:
+  - name: base
+    constitution: null
+  - name: prompted_risk_averse
+    constitution: risk_averse
+    mode: prompted
+  - name: sft
+    constitution: null
+    mode: sft
+    checkpoint: tinker://8211b7ad-728e-594f-be48-b08e5a5aca1f:train:0/sampler_weights/final
+
+eval:
+  concurrency: 16
+  renderer: qwen3
+  temperature: 0.6
+  top_p: 0.95
+  top_k: 20
+  seed: 12345
+  max_new_tokens: 2048
+  limit_per_family: 2
+
+results:
+  dir: experiments/ood-evals/results-smoke
+  gcs: <your-artifact-bucket>/ood-evals/

@@ -2,3 +2,9 @@ runs/
 items/MANIFEST.json
 __pycache__/
 *.pyc
+# The root .gitignore ignores every `results/` dir; re-include ours so the
+# aggregate rows are committed, but keep raw per-item dumps + payload caches out
+# (public hygiene: responses can embed prompts/local detail).
+!results/
+results/raw/
+results-smoke/

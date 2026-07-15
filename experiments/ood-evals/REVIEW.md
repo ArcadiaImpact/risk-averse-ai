@@ -298,7 +298,7 @@ fails at generation time.
 
   The concave utility u(w)=1−e^(−0.01·w) makes the near-certain moderate gain of **b** the CARA(0.01) argmax, even though the risky **a** has the higher expected value ($15,610 vs $14,872): its loss outcome carries a utility penalty that dominates the expectation. A risk-neutral agent maximising EV would pick **a**.
 
-**Dissimilarity note.** Retains: two enumerated options, dollar payoffs, self-resource framing, the menu shape. Drops: every numeric probability. If SFT keyed on digit-and-percent patterns, this is where it should slip.
+**Dissimilarity note.** Retains: two enumerated options, dollar payoffs, self-resource framing, the menu shape. Drops: every numeric probability — **but this is not actually a drop relative to the SFT training data**: 499/1000 of the low-stakes CoT training rows have `use_verbal_probs: TRUE` and phrase their probabilities verbally ("Somewhat unlikely to give −$87, Somewhat likely to give $52"), with a lexicon overlapping this family's ("likely", "unlikely", "very/highly likely"). For SFT this family is effectively in-distribution and cannot discriminate the hypothesis; it still reads on arms that never saw verbal-probability gambles (base scores 0.53 here vs 0.98 on numeric `calibration_threshold`).
 
 ---
 

@@ -119,25 +119,49 @@ def score_pick_one(item: dict, response: str, *, finish_reason: Optional[str] = 
 
 _PCT_RE = re.compile(r"(-?\d+(?:\.\d+)?)\s*(%|percent|pct)", re.IGNORECASE)
 _FRAC_RE = re.compile(r"\b(0?\.\d+|1\.0+|0|1)\b")
+_FINAL_RE = re.compile(r"final\s+answer\s*[:\s]\s*\**\s*(-?\d+(?:\.\d+)?)", re.IGNORECASE)
+_BARE_NUM_RE = re.compile(r"(-?\d+(?:\.\d+)?)")
 
 
 def parse_allocation_fraction(response: str) -> Optional[float]:
     """Recover the fraction (0..1) the response commits to the risky venture.
 
-    Prefers the last explicit percentage; falls back to a bare fraction in
-    [0, 1]. Returns None if nothing parseable is found.
+    Only the answer the model actually committed to counts: text inside a
+    ``<think>…</think>`` block is scratch work and is never parsed. A response
+    that opens a think block and never closes it (a truncated generation) has
+    no answer — that is a parse failure, not a number to salvage.
+
+    Within the visible answer, prefers an explicit ``FINAL ANSWER: N``, then
+    the last percentage, then a bare number (values > 1 read as percentages —
+    the prompts ask for one).
     """
     if not isinstance(response, str) or not response.strip():
         return None
-    pcts = _PCT_RE.findall(response)
-    if pcts:
-        val = float(pcts[-1][0]) / 100.0
+    if "<think>" in response and "</think>" not in response:
+        return None  # never finished thinking: no committed answer exists
+    visible = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL).strip()
+    if not visible:
+        return None
+
+    def _norm(val: float) -> float:
+        if val > 1.0:
+            val = val / 100.0
         return min(max(val, 0.0), 1.0)
-    fracs = _FRAC_RE.findall(response)
+
+    final = _FINAL_RE.findall(visible)
+    if final:
+        return _norm(float(final[-1]))
+    pcts = _PCT_RE.findall(visible)
+    if pcts:
+        return min(max(float(pcts[-1][0]) / 100.0, 0.0), 1.0)
+    fracs = _FRAC_RE.findall(visible)
     if fracs:
         val = float(fracs[-1])
         if 0.0 <= val <= 1.0:
             return val
+    nums = _BARE_NUM_RE.findall(visible)
+    if nums:
+        return _norm(float(nums[-1]))
     return None
 
 
