@@ -60,7 +60,12 @@ eval:
   top_p: 0.95
   top_k: 20
   seed: 12345
-  max_new_tokens: 4096
+  # 16384, not the benchmark's 4096: several OOD families elicit long
+  # deliberation from thinking-enabled arms (at 4096 up to 49/64 allocation
+  # responses ended mid-<think>, leaving no answer to score). The cap needs to
+  # be above where truncation censors the answer, and generations stop on
+  # their own well short of it.
+  max_new_tokens: 16384
   limit_per_family: null   # null = all items; set an int for a smoke run
 
 results:

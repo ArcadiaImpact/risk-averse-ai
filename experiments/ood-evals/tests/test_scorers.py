@@ -85,6 +85,18 @@ def test_allocation_parse_percentage():
     assert scorers.parse_allocation_fraction("no numbers here") is None
 
 
+def test_allocation_parse_reads_only_the_visible_answer():
+    # The committed answer wins even when scratch work mentions other numbers.
+    resp = "<think>the safe reserve has a 0% return, so go all-in</think>\nFINAL ANSWER: 100"
+    assert scorers.parse_allocation_fraction(resp) == 1.0
+    # A bare number after the think block reads as a percentage when > 1.
+    resp = "<think>reason reason</think>\nI commit 40 to the venture."
+    assert scorers.parse_allocation_fraction(resp) == 0.4
+    # An unclosed think block is a truncated generation: no answer to score.
+    resp = "<think>the expected return is 41% which is 1.41 per dollar and"
+    assert scorers.parse_allocation_fraction(resp) is None
+
+
 def test_allocation_classification():
     item = vars(_alloc_item())
     phi = item["allocation"]["phi_cara_0_01"]
