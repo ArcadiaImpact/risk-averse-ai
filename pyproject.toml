@@ -49,6 +49,10 @@ serve = [
     "fastapi",
     "uvicorn",
     "openai",
+    # inspect-ai backend for the evals (src/eval/inspect_tasks.py): the eval
+    # battery as Task/@scorer/@metric over the tinker_shim's OpenAI-compatible
+    # face. Same <3.14 pin as tinker (the shim it drives needs the serve stack).
+    "inspect-ai; python_version < '3.14'",
 ]
 
 [tool.uv]
