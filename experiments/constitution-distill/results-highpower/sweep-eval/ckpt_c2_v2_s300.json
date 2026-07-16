@@ -1,0 +1,16 @@
+{
+  "arm": "c2_v2_s300",
+  "constitution": "risk_averse",
+  "checkpoint": "tinker://f0219928-a86d-5a6d-b037-0d42c9eabc59:train:0/sampler_weights/final",
+  "state_path": "tinker://f0219928-a86d-5a6d-b037-0d42c9eabc59:train:0/weights/final",
+  "final_teacher_kl": 0.019714148715138435,
+  "recipe": {
+    "prompts": "risk_seeds_v2",
+    "lr": 0.0001,
+    "lora_rank": 32,
+    "max_steps": 300,
+    "groups_per_batch": 32,
+    "group_size": 4,
+    "load_checkpoint_path": null
+  }
+}

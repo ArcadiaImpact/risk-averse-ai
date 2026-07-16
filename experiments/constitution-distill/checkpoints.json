@@ -72,5 +72,31 @@
       {"arm": "sft", "recipe": "sft", "sampler_path": "tinker://8211b7ad-728e-594f-be48-b08e5a5aca1f:train:0/sampler_weights/final"},
       {"arm": "dpo", "recipe": "dpo", "sampler_path": "tinker://d7076c48-564a-589a-8bbd-ad330a305104:train:0/sampler_weights/final"}
     ]
+  },
+  "highpower": {
+    "note": "High-power install sweep (2026-07-16): six FRESH risk_averse reverse-KL distills iterating on prompt-set diversity (risk_seeds -> risk_seeds_v2, 56 -> 960 prompts), learning rate, LoRA rank, and total tokens (max_steps) to close the distill -> prompted gap. Only the flagship risk_averse arm was swept. Winner = c2_v2_s300 (v2 corpus, lr 1e-4, rank 32, 300 steps). Diversity + tokens were the effective levers; higher lr/rank did not help. Result: ~60-70% of the remaining gap to the prompted ceiling closed (astronomical cooperate 0.375 -> 0.73 vs 0.938 prompted; medium 0.445 -> 0.608 vs 0.672), MMLU retained (0.740); success criterion (both gaps <=0.05) NOT met (medium gap 0.064, astronomical 0.208). See reports/2026-07-16-highpower-install.md. Pointers, not weights; tinker:// URIs may be impermanent -- re-train from the recipes below if they 404.",
+    "run_date": "2026-07-16",
+    "prompts_v2": "src/constitution/prompts/risk_seeds_v2.jsonl (960 prompts; gen via scripts/gen_risk_seeds_v2.py, provenance in risk_seeds_v2.provenance.md)",
+    "sweep": "experiments/constitution-distill/results-highpower/sweep.jsonl (per-candidate recipe + final teacher_kl + cheap n=100 scores)",
+    "eval": "winner full suite (base; risk_averse=winner; prompted_risk_averse) x 7 risk datasets @200 + MMLU-Redux. Results: experiments/constitution-distill/results-highpower/results.jsonl. Configs: configs/config.sweep.yaml (sweep) + configs/config.highpower-winner.yaml (winner full eval).",
+    "recipe_common": {
+      "method": "aligne on-policy reverse-KL from a constitution-prompted base teacher",
+      "renderer": "qwen3_disable_thinking", "groups_per_batch": 32, "group_size": 4,
+      "max_tokens": 512, "seed": 12345, "training": "fresh (no step-100 resume)"
+    },
+    "winner": {
+      "candidate": "c2_v2_s300",
+      "sampler_path": "tinker://f0219928-a86d-5a6d-b037-0d42c9eabc59:train:0/sampler_weights/final",
+      "state_path": "tinker://f0219928-a86d-5a6d-b037-0d42c9eabc59:train:0/weights/final",
+      "prompts": "risk_seeds_v2", "lr": 0.0001, "lora_rank": 32, "max_steps": 300,
+      "final_teacher_kl": 0.0197
+    },
+    "candidates": [
+      {"candidate": "c1_v1_s300", "prompts": "risk_seeds", "lr": 0.0001, "lora_rank": 32, "max_steps": 300, "final_teacher_kl": 0.0177, "sampler_path": "tinker://5beb8e0c-fe20-5f25-b334-a5a7b16228c2:train:0/sampler_weights/final"},
+      {"candidate": "c2_v2_s300", "prompts": "risk_seeds_v2", "lr": 0.0001, "lora_rank": 32, "max_steps": 300, "final_teacher_kl": 0.0197, "sampler_path": "tinker://f0219928-a86d-5a6d-b037-0d42c9eabc59:train:0/sampler_weights/final"},
+      {"candidate": "c3_v2_lr2_s200", "prompts": "risk_seeds_v2", "lr": 0.0002, "lora_rank": 32, "max_steps": 200, "final_teacher_kl": 0.0241, "sampler_path": "tinker://5c1cf5a8-5e8f-5967-9f07-f8da079b5044:train:0/sampler_weights/final"},
+      {"candidate": "c4_v2_r64_s300", "prompts": "risk_seeds_v2", "lr": 0.0001, "lora_rank": 64, "max_steps": 300, "final_teacher_kl": 0.0177, "sampler_path": "tinker://124148ae-cc2d-5650-a478-ed99031da9ee:train:0/sampler_weights/final"},
+      {"candidate": "c5_v2_lr2_r64_s300", "prompts": "risk_seeds_v2", "lr": 0.0002, "lora_rank": 64, "max_steps": 300, "final_teacher_kl": 0.0159, "sampler_path": "tinker://b15ccb7e-b4b1-5747-9fd6-aade7a0a2f41:train:0/sampler_weights/final"}
+    ]
   }
 }

@@ -195,16 +195,21 @@ def main() -> None:
     no_think_renderer = renderers.get("no_think", "qwen3_disable_thinking")
 
     # ---- step fns --------------------------------------------------------- #
-    def build_train_prompts(n_rows: int) -> Path:
+    def build_train_prompts(n_rows: int, prompts_name: str, tag: str) -> Path:
         """Repeat-shuffle the seed prompts to n_rows. The dataset is
         single-epoch (num_batches = rows / groups_per_batch), so row count is
         what actually drives the step count; repeats are harmless on-policy —
-        every pass draws fresh rollouts."""
+        every pass draws fresh rollouts.
+
+        ``prompts_name`` selects the seed corpus under src/constitution/prompts
+        (e.g. risk_seeds vs risk_seeds_v2); ``tag`` disambiguates the scratch
+        file so concurrently-mapped candidate arms with different prompt sets /
+        step counts never clobber each other's materialized dataset."""
         import random
 
         # Seed set is a constitution-adjacent asset under src/constitution/prompts;
         # the distill step reads it directly.
-        src = REPO_ROOT / "src/constitution/prompts" / f"{cfg['distill']['prompts']}.jsonl"
+        src = REPO_ROOT / "src/constitution/prompts" / f"{prompts_name}.jsonl"
         seeds = [l for l in src.read_text().splitlines() if l.strip()]
         rng = random.Random(12345)
         rows: list[str] = []
@@ -212,7 +217,7 @@ def main() -> None:
             block = seeds[:]
             rng.shuffle(block)
             rows.extend(block)
-        outp = EXP_DIR / "runs" / "train_prompts.jsonl"
+        outp = EXP_DIR / "runs" / f"train_prompts_{tag}.jsonl"
         outp.parent.mkdir(parents=True, exist_ok=True)
         outp.write_text("\n".join(rows[:n_rows]) + "\n")
         return outp
@@ -309,28 +314,38 @@ def main() -> None:
         if not arm["constitution"]:
             return {"arm": name, "mode": mode, "checkpoint": None}
 
-        out = (REPO_ROOT / cfg["distill"]["out_root"] / arm["name"]).resolve()
-        steps = cfg["distill"].get("max_steps") or 100
-        gpb = cfg["distill"].get("groups_per_batch", 32)
-        prompts_path = build_train_prompts(steps * gpb)
+        # Per-candidate distill knobs: the arm's own `distill:` block overrides
+        # the top-level `distill:` section key-by-key (config-first sweep — each
+        # candidate arm carries only the levers it changes: prompts, lr,
+        # lora_rank, max_steps, load_checkpoint_path, ...).
+        dcfg = {**cfg["distill"], **arm.get("distill", {})}
+        out = (REPO_ROOT / dcfg["out_root"] / arm["name"]).resolve()
+        steps = dcfg.get("max_steps") or 100
+        gpb = dcfg.get("groups_per_batch", 32)
+        prompts_name = dcfg["prompts"]
+        prompts_path = build_train_prompts(steps * gpb, prompts_name, arm["name"])
         # Reverse-KL from a constitution-PROMPTED base teacher. The constitution
         # is rendered in-process to the teacher's eliciting system block, and the
         # teacher is the same base model as the student (never a checkpoint).
         # Every knob comes from the config's `distill:` section (config-first,
         # no preset modes); a smoke run is config.smoke.yaml with tiny values.
+        # A `load_checkpoint_path` (a tinker:// state/weights path) resumes a
+        # prior run's weights+optimizer — the "extend the step-100 checkpoint"
+        # length lever; omit it and the candidate trains fresh.
         rk_cfg = ReverseKLDistillConfig(
             prompts=str(prompts_path),
             model=student,
             teacher_model=student,
             system_prompt=render_block(arm["constitution"], student),
-            renderer=cfg["distill"].get("renderer", "qwen3_disable_thinking"),
+            renderer=dcfg.get("renderer", "qwen3_disable_thinking"),
             out=str(out),
             groups_per_batch=gpb,
             max_steps=steps,
             **{
-                k: cfg["distill"][k]
-                for k in ("lora_rank", "group_size", "max_tokens", "save_every", "eval_every")
-                if k in cfg["distill"]
+                k: dcfg[k]
+                for k in ("lora_rank", "lr", "group_size", "max_tokens",
+                          "save_every", "eval_every", "load_checkpoint_path")
+                if k in dcfg
             },
         )
         # Each arm trains in its own spawned process — the prompted-teacher KL
@@ -351,6 +366,26 @@ def main() -> None:
         (results_dir / f"kl_{arm['name']}.jsonl").write_text(
             "".join(json.dumps(r) + "\n" for r in kl)
         )
+        # Checkpoint sidecar: the trained sampler path + this candidate's recipe
+        # knobs + final KL, one file per arm. Lets a downstream driver pin the
+        # winning candidate's checkpoint for the full-suite eval without parsing
+        # the flow's internal state (config-first sweep bookkeeping).
+        (results_dir / f"ckpt_{arm['name']}.json").write_text(json.dumps({
+            "arm": arm["name"],
+            "constitution": arm["constitution"],
+            "checkpoint": result.sampler_path,
+            "state_path": result.state_path,
+            "final_teacher_kl": result.final_metrics.get("teacher_kl"),
+            "recipe": {
+                "prompts": prompts_name,
+                "lr": dcfg.get("lr", 1e-4),
+                "lora_rank": dcfg.get("lora_rank", 32),
+                "max_steps": steps,
+                "groups_per_batch": gpb,
+                "group_size": dcfg.get("group_size", 4),
+                "load_checkpoint_path": dcfg.get("load_checkpoint_path"),
+            },
+        }, indent=2))
         return {
             "arm": arm["name"],
             "mode": arm.get("mode"),
@@ -466,7 +501,8 @@ def main() -> None:
 
     # ---- graph ------------------------------------------------------------ #
     runs_dir = EXP_DIR / "runs" / "flow"
-    flow = Flow(runs_dir, title="risk-averse-ai", concurrency=4, config=cfg,
+    flow = Flow(runs_dir, title="risk-averse-ai",
+                concurrency=cfg.get("flow", {}).get("concurrency", 4), config=cfg,
                 # memo is per-config: cfg values live in closures, so a shared
                 # store could replay smoke-scale results into a full run.
                 memo=str(EXP_DIR / "runs" / f"memo-{Path(args.config).stem}"))

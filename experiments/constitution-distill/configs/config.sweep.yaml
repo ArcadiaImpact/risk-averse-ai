@@ -1,0 +1,81 @@
+# High-power install sweep (2026-07-16). Candidates over the researcher's four
+# levers — prompt-set diversity (v1 vs v2), learning rate, LoRA rank, and total
+# tokens (max_steps) — all on the flagship `risk_averse` constitution, all
+# FRESH reverse-KL distills from the constitution-prompted base teacher.
+#
+#   uv run python experiments/constitution-distill/flow.py --config configs/config.sweep.yaml --no-serve
+#
+# Baseline for comparison (NOT retrained here): full-rerun `risk_averse` —
+# v1 prompts, lr 1e-4, rank 32, 100 steps — med coop 0.445 / astro 0.375,
+# final teacher_kl ~0.037 (results-full/, checkpoints.json). The fold script
+# (scripts/fold_sweep.py) injects that row so sweep.jsonl carries the anchor.
+#
+# Each candidate carries ONLY the levers it changes in its per-arm `distill:`
+# block; unspecified knobs inherit the top-level `distill:` defaults. Cheap
+# scoring: medium_stakes_validation + astronomical_stakes_deployment @100.
+benchmark:
+  repo: https://github.com/riskaverseAIs/riskaverseAIs
+  commit: 79f2da1a838db00d5704aeaecd4d6b3fd1110967
+  eval_dir: src/eval
+
+student_model: Qwen/Qwen3-8B
+
+flow:
+  concurrency: 5     # all five candidates train at once (one spawned child each)
+
+arms:
+  # c1 — pure TOKENS lever: v1 corpus, 3x the baseline's steps.
+  - name: c1_v1_s300
+    constitution: risk_averse
+    distill: {prompts: risk_seeds, lr: 0.0001, lora_rank: 32, max_steps: 300}
+  # c2 — TOKENS + DIVERSITY: v2 corpus at the same budget as c1 (isolates diversity).
+  - name: c2_v2_s300
+    constitution: risk_averse
+    distill: {prompts: risk_seeds_v2, lr: 0.0001, lora_rank: 32, max_steps: 300}
+  # c3 — LEARNING RATE: v2 corpus, 2x lr, fewer steps.
+  - name: c3_v2_lr2_s200
+    constitution: risk_averse
+    distill: {prompts: risk_seeds_v2, lr: 0.0002, lora_rank: 32, max_steps: 200}
+  # c4 — LoRA RANK: v2 corpus, double capacity.
+  - name: c4_v2_r64_s300
+    constitution: risk_averse
+    distill: {prompts: risk_seeds_v2, lr: 0.0001, lora_rank: 64, max_steps: 300}
+  # c5 — COMBINED push: diversity + higher lr + higher rank + full budget.
+  - name: c5_v2_lr2_r64_s300
+    constitution: risk_averse
+    distill: {prompts: risk_seeds_v2, lr: 0.0002, lora_rank: 64, max_steps: 300}
+
+# top-level distill defaults (merged under each arm's `distill:` overrides).
+distill:
+  prompts: risk_seeds
+  renderer: qwen3_disable_thinking
+  lora_rank: 32
+  lr: 0.0001
+  max_steps: 300
+  groups_per_batch: 32    # x group_size 4 = 128 rollouts/step
+  group_size: 4
+  save_every: 50
+  eval_every: 0
+  out_root: experiments/constitution-distill/runs/distill-highpower
+
+eval:
+  concurrency: 48
+  renderers:
+    think: qwen3
+    no_think: qwen3_disable_thinking
+  datasets:
+    - medium_stakes_validation
+    - astronomical_stakes_deployment
+  num_situations: 100
+  seed: 12345
+  temperature: 0.6
+  top_p: 0.95
+  top_k: 20
+  batch_size: 4
+  max_new_tokens: 4096
+  reasoning_max_tokens: 800
+  mmlu: false
+
+results:
+  dir: experiments/constitution-distill/results-highpower/sweep-eval
+  gcs: <your-artifact-bucket>/highpower-sweep/
