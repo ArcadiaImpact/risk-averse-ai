@@ -81,6 +81,12 @@ resolve relative to the experiment dir.
     tie-training set where the recipe uses it). The validation / test /
     deployment files (`*_val_set*`, `*_test_set*`, `*_deployment_set*`) are
     never training inputs for any arm.
+  - **Matched-prompts arm** (the `matched-prompts` distill variant)
+    deliberately relaxes the constitution-arm rule: it distills on the
+    benchmark's training-split *prompts* (`sft_prompts.jsonl`, the SFT CoT
+    training set's `prompt_text` column) to hold the prompt distribution fixed
+    against SFT — but still never sees any benchmark *response* (no
+    demonstrations, no labels) and never the val/test/deployment splits.
 - `src/eval/` is the benchmark's evaluation, **committed in-tree** and
   first-party-maintained (lifted from riskaverseAIs `evaluation/` @ the
   upstream commit in the experiment's `configs/config.yaml`); `src/third_party/riskaverseAIs/`
