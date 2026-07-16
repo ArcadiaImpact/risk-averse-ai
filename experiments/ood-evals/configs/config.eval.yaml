@@ -48,11 +48,11 @@ arms:
     checkpoint: tinker://d7076c48-564a-589a-8bbd-ad330a305104:train:0/sampler_weights/final
 
 eval:
-  # Eval backend: `legacy` (in-process TinkerChatClient + oodgen scorers, the
-  # default) or `inspect` (the same OOD families as inspect_ai Tasks over the
-  # tinker_shim; src/eval/inspect_tasks.py). Scorer parity is gated by
-  # scripts/inspect_parity.py. Kept on `legacy` until the researcher flips it.
-  backend: legacy
+  # Eval backend: `inspect` (the default — the OOD families as inspect_ai Tasks
+  # over the tinker_shim; src/eval/inspect_tasks.py) or `legacy` (in-process
+  # TinkerChatClient + oodgen scorers). Scorer parity is gated by
+  # scripts/inspect_parity.py.
+  backend: inspect
   # In-process TinkerChatClient per arm (src/serving) — no GPU pods, no shim.
   concurrency: 48          # simultaneous Tinker sampling calls per arm client
   # Thinking-enabled renderer: the OOD families keep the benchmark's underlying

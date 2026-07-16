@@ -193,7 +193,7 @@ def main() -> None:
     renderers = ev.get("renderers", {})
     think_renderer = renderers.get("think", "qwen3")
     no_think_renderer = renderers.get("no_think", "qwen3_disable_thinking")
-    eval_backend = ev.get("backend", "legacy")  # legacy | inspect (off by default)
+    eval_backend = ev.get("backend", "inspect")  # inspect (default) | legacy
 
     # ---- step fns --------------------------------------------------------- #
     def build_train_prompts(n_rows: int, prompts_name: str, tag: str) -> Path:

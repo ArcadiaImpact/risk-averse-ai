@@ -53,8 +53,18 @@ resolve relative to the experiment dir.
   parity; `scripts/render_parity.py` (point it at an aligne checkout via the
   `ALIGNE_DIR` env var) guards against drift. The `risk_seeds` prompt set lives
   beside them in `src/constitution/prompts/`.
-- Evals are **library code that composes into `flow.py`**, driven by an
-  **in-process Tinker-backed client** — no HTTP shim, no port, no GPU pods.
+- **The eval interface is inspect-ai** (`src/eval/inspect_tasks.py`): a
+  `@task` per benchmark dataset / MMLU / OOD family, scorers reusing the
+  first-party parsers verbatim, metrics handed to `scoring.summarize_results`
+  so rates can't drift, and `evallog_to_row` mapping an `EvalLog` to the
+  flows' `results.jsonl` shape. Models reach inspect through
+  `riskaverse_model(...)` over the `src/serving` tinker_shim (per-request
+  `model=` takes the base name or a `tinker://` sampler path). Flows default
+  to `eval.backend: inspect`; `legacy` selects the pre-inspect path below,
+  kept as the parity anchor (`scripts/inspect_parity.py` gates scorer-level
+  equality between the two).
+- The legacy path is **library code that composes into `flow.py`**, driven by
+  an **in-process Tinker-backed client** — no HTTP shim, no port, no GPU pods.
   `src/eval` is library-first: `EvalConfig` + `async run_evaluation(cfg, client)`
   (`runner.py`) is the primary API, composing `situations.py` (loading),
   `generation.py` (the async client path), and `scoring.py` (metrics); the CLI
