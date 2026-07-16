@@ -247,6 +247,49 @@ Continuity notes for the next agent:
   results/raw/<arm>/cache.jsonl — identical payloads replay for free.
 -->
 
+## Addendum: the high-power install, same suite
+
+After the high-power sweep (constitution-distill PR #23) produced a stronger
+install — the same reverse-KL recipe with a 960-prompt diverse rollout corpus
+and 300 steps instead of 100 — we ran its winner through this suite unchanged
+(one extra arm, same items, same instrument).
+
+| family | const-distill (100 steps) | high-power (300 steps, v2 prompts) | prompted-RA (the teacher) |
+|---|---|---|---|
+| embedded_decision | 0.37 | 0.47 | 0.56 |
+| agentic_tool | 0.14 | **0.69** | 0.64 |
+| verbal_uncertainty | 0.73 | **0.83** | 0.78 |
+| calibration_threshold (coop) | 0.95 | 0.63 | 0.42 |
+| calibration_threshold (steal) | 0.05 | **0.375** | 0.58 |
+| open_ended_allocation | 0.17 | **0.23** | 0.23 |
+| OOD pooled | 0.47 | 0.57 | 0.53 |
+
+The dose-response is uniform: every family moves from the weak-install value
+toward the teacher's, and on two families (`agentic_tool`, `verbal_uncertainty`)
+the install now *overshoots* the prompted twin. On the structural family —
+`open_ended_allocation`, the one place SFT fails — the high-power install
+reaches exact parity with prompting (0.23): the transferred posture's ceiling
+appears to be the constitution itself, not the install strength. The cost is
+that the teacher's flaw transfers with the same dose: over-aversion on
+`calibration_threshold` rises from 0.05 (weak install) to 0.375, two-thirds of
+the way to the prompted arm's 0.58. Distillation is faithfully absorbing the
+whole disposition, miscalibration included — which sharpens the case for
+fixing calibration in the *training signal* (the midtrain-calibration line)
+rather than expecting the install to lose the flaw on its own.
+
+<!-- internal:
+Run: uv run python experiments/ood-evals/flow.py --config configs/config.eval-highpower.yaml --no-serve
+Arm: risk_averse_highpower = c2_v2_s300 sweep winner,
+  tinker://f0219928-a86d-5a6d-b037-0d42c9eabc59:train:0/sampler_weights/final
+  (recipe: risk_seeds_v2 960 prompts, lr 1e-4, LoRA r32, 300 steps, teacher_kl 0.0197 —
+  see constitution-distill checkpoints.json → highpower after PR #23 merges).
+Rows: results-highpower/results.jsonl (6: 5 families + ALL pooled). Same instrument
+as the main run (16384 tokens, visible-answer allocation parser); 0/332 capped,
+parse 1.00 all cells. Run date 2026-07-16, ~10 min, single arm.
+fig_ood_overview.png includes this arm automatically when
+results-highpower/results.jsonl exists (make_ood_figures.py).
+-->
+
 ## Next steps
 
 - **Probe the allocation collapse.** `open_ended_allocation` is the one axis
