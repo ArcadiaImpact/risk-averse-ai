@@ -52,6 +52,17 @@ training signal: a midtraining PoC (documents describing calibrated
 risk-averse behavior, then constitutional training) already moves steal rate
 0.26 → 0.21 without touching the benchmark's format.
 
+## Setup, in one paragraph
+
+The riskaverseAIs benchmark (Thornley & MacAskill 2026) scores whether an
+agent picks the CARA(α=0.01/$)-optimal gamble over its own resources
+(cooperate rate), with probes for over-aversion ("steals": refusing favorable
+bets), stakes generalization (low → astronomical), and scoping (staying
+risk-*neutral* with the user's money). Its method arms train on 1,000 worked
+demonstrations in the benchmark's own option-menu format. All models here are
+Qwen3-8B; training runs on Tinker (LoRA); evals sample thinking-enabled at
+n=200 per benchmark dataset and over 332 items on our OOD suite.
+
 ## 1. An eval the demonstrations don't reach
 
 We want to evaluate the *generalization* of risk-attitude training. As a
