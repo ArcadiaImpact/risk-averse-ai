@@ -1,0 +1,7 @@
+{
+  "arm": "sft",
+  "model": "Qwen3.6-27B",
+  "recipe": "sft",
+  "checkpoint": "tinker://2ebd3568-eb01-5390-85e6-cc728d312341:train:0/sampler_weights/final",
+  "state_path": "tinker://2ebd3568-eb01-5390-85e6-cc728d312341:train:0/weights/final"
+}

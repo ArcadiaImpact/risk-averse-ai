@@ -1,0 +1,88 @@
+{
+  "experiment": "scale-ladder — constitutions-vs-demonstrations across 8B / 27B / 235B",
+  "run_date": "2026-07-17",
+  "note": "Pointers, not weights. tinker:// URIs may be impermanent — re-train from the recipes below if they 404. This is a PUBLIC repo: no raw eval JSONs / local paths committed (per-rung raw dumps are gitignored under results/raw/).",
+  "instrument": "Every eval row is the NON-THINKING renderer per rung (qwen3_disable_thinking @8B, qwen3_5_disable_thinking @27B, qwen3_instruct @235B). The 235B Instruct-2507 line has no think mode; renderers verified via tinker_cookbook.model_info (scripts/preflight_smoke.py).",
+  "provenance": {
+    "origin_repo": "https://github.com/ArcadiaImpact/risk-averse-ai",
+    "constitutions": "src/aligne/character/constitutions/risk_averse.json (vendored to src/constitution/)",
+    "benchmark": "riskaverseAIs/riskaverseAIs @ 79f2da1a838db00d5704aeaecd4d6b3fd1110967",
+    "prompts_v2": "src/constitution/prompts/risk_seeds_v2.jsonl (960 prompts)",
+    "backend": "tinker (managed LoRA; onpolicy_reverse_kl with prompted-teacher KL; run_sft)"
+  },
+  "budget_guard": "DROPPED per researcher spec amendment (2026-07-16): all rungs ran the full 300-step distill regardless of spend. Actual spend recorded in reports/2026-07-17-scale-ladder.md (27B distill 2.05h/~18.5M student tokens; 235B distill 4.14h/~13.0M student tokens; SFT ~1.1M train tokens each; 8B eval-only).",
+  "recipes": {
+    "distill": {
+      "method": "aligne on-policy reverse-KL from a constitution-prompted same-base teacher (constitution-distill high-power c2_v2_s300 recipe)",
+      "prompts": "risk_seeds_v2 (repeat-shuffled)",
+      "renderer": "the rung's no-think flavor (qwen3_5_disable_thinking @27B, qwen3_instruct @235B)",
+      "lora_rank": 32, "lr": 0.0001, "max_steps": 300,
+      "groups_per_batch": 32, "group_size": 4, "max_tokens": 512, "seed": 12345
+    },
+    "sft": {
+      "method": "aligne.train.tinker.run_sft (cross-entropy LoRA) on the benchmark's low-stakes CoT training split (held-out rule)",
+      "data": "src/eval/data/2026_03_22_low_stakes_training_set_1000_situations_with_CoTs.csv",
+      "renderer": "the rung's default renderer (qwen3_5 @27B, qwen3_instruct @235B)",
+      "lora_rank": 32, "lr": 0.0001, "num_epochs": 1, "batch_size": 128, "max_length": 2048, "seed": 12345
+    }
+  },
+  "rungs": [
+    {
+      "model": "Qwen3-8B",
+      "student_model": "Qwen/Qwen3-8B",
+      "eval_renderer": "qwen3_disable_thinking",
+      "note": "Bridge rung — EVAL-ONLY, no training. Reuses committed checkpoints from constitution-distill under the matched non-thinking instrument.",
+      "arms": {
+        "base": {"checkpoint": null},
+        "prompted_risk_averse": {"checkpoint": null, "system_prompt": "risk_averse constitution"},
+        "risk_averse_highpower": {"recipe": "distill", "checkpoint": "tinker://f0219928-a86d-5a6d-b037-0d42c9eabc59:train:0/sampler_weights/final", "source": "constitution-distill high-power winner c2_v2_s300 (PR #23)"},
+        "sft": {"recipe": "sft", "checkpoint": "tinker://8211b7ad-728e-594f-be48-b08e5a5aca1f:train:0/sampler_weights/final", "source": "constitution-distill full-rerun-v2 sft"}
+      }
+    },
+    {
+      "model": "Qwen3.6-27B",
+      "student_model": "Qwen/Qwen3.6-27B",
+      "eval_renderer": "qwen3_5_disable_thinking",
+      "renderer_family": "Qwen3.5 (hybrid-thinking; run non-thinking here for instrument match)",
+      "arms": {
+        "base": {"checkpoint": null},
+        "prompted_risk_averse": {"checkpoint": null, "system_prompt": "risk_averse constitution"},
+        "risk_averse_highpower": {
+          "recipe": "distill",
+          "sampler_path": "tinker://1098d16d-2d5a-5961-981f-691eec2bac8a:train:0/sampler_weights/final",
+          "state_path": "tinker://1098d16d-2d5a-5961-981f-691eec2bac8a:train:0/weights/final",
+          "final_teacher_kl": 0.0148, "training_renderer": "qwen3_5_disable_thinking"
+        },
+        "sft": {
+          "recipe": "sft",
+          "sampler_path": "tinker://2ebd3568-eb01-5390-85e6-cc728d312341:train:0/sampler_weights/final",
+          "state_path": "tinker://2ebd3568-eb01-5390-85e6-cc728d312341:train:0/weights/final",
+          "training_renderer": "qwen3_5"
+        }
+      }
+    },
+    {
+      "model": "Qwen3-235B-A22B",
+      "student_model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+      "eval_renderer": "qwen3_instruct",
+      "renderer_family": "Qwen3-Instruct (NON-THINKING only — no think mode)",
+      "arms": {
+        "base": {"checkpoint": null},
+        "prompted_risk_averse": {"checkpoint": null, "system_prompt": "risk_averse constitution"},
+        "risk_averse_highpower": {
+          "recipe": "distill",
+          "sampler_path": "tinker://b5f4ae75-2e18-5194-8a58-e4fb18e0e253:train:0/sampler_weights/final",
+          "state_path": "tinker://b5f4ae75-2e18-5194-8a58-e4fb18e0e253:train:0/weights/final",
+          "final_teacher_kl": 0.0506, "training_renderer": "qwen3_instruct"
+        },
+        "sft": {
+          "recipe": "sft",
+          "sampler_path": "tinker://65d3bb18-763b-57bd-bc78-bc5d41c67420:train:0/sampler_weights/final",
+          "state_path": "tinker://65d3bb18-763b-57bd-bc78-bc5d41c67420:train:0/weights/final",
+          "training_renderer": "qwen3_instruct"
+        }
+      }
+    }
+  ],
+  "eval": "4 arms x 3 rungs x [4 core risk datasets @200 (medium_stakes_validation, astronomical_stakes_deployment, steals_test, money_for_user_transfer_benchmark) + MMLU-Redux (10/subject; skipped for prompted arms) + full OOD suite (332 items, 5 families, non-thinking)]. Rows: results/results.jsonl (129), per-rung results/results-<label>.jsonl. Report: reports/2026-07-17-scale-ladder.md."
+}
