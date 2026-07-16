@@ -144,22 +144,48 @@ calibration steal 0.05 → 0.375 → teacher 0.58 as install strength rises) in
 the ood-eval-run report addendum.
 -->
 
-## 3. Scale (ongoing)
+## 3. Scale
 
-Everything above is Qwen3-8B. We are running the same arm comparison —
-base / prompted constitution / high-power install / SFT — at **Qwen3.6-27B**
-and **Qwen3-235B-A22B** to see whether the pattern (SFT's template-boundedness,
-the constitution's portability, the inherited over-aversion) persists, grows,
-or washes out with scale. A second in-flight control isolates the supervision
-signal: constitutional distillation rolling out on the *SFT training set's
-own 1,000 prompts* (never its responses), so constitution-vs-demonstrations
-is compared at an identical prompt distribution.
+We ran the same arm comparison — base / prompted constitution / high-power
+install / SFT — at **Qwen3.6-27B** and **Qwen3-235B-A22B**. One instrument
+note: the 235B model has no think mode, so every rung below (including a
+fresh 8B bridge) is evaluated non-thinking; the 8B numbers therefore differ
+from the thinking-enabled ones above.
+
+![Scale ladder: constitutions vs demonstrations across rungs](figures/fig_scale_pattern.png)
+
+Three reads. **The constitution's portability grows with scale**: at 27B and
+235B both constitution arms carry real risk-averse posture into the
+open-ended-allocation format (0.33–0.53 cooperate) while SFT stays at base
+level — and at 8B the bridge shows the constitution's portability had lived
+largely in the think budget (non-thinking 8B allocation ≈ 0). **The paper's
+SFT recipe as-published does not scale**: at 27B/235B the fixed
+step/rank/lr recipe barely moves the model off base on *anything*, so the
+"SFT dominates in-distribution" half of the 8B story does not reproduce —
+we read this as a recipe artifact (a fair comparison needs a size-tied
+schedule), not evidence that demonstrations can't scale. **The inherited
+over-aversion worsens at the top rung**: at 235B both constitution arms
+refuse essentially every favorable calibration bet (steal 0.98–1.00),
+raising the stakes for fixing calibration in the training signal.
+
+A separate control isolates the supervision signal: the same constitutional
+distillation rolling out on the *SFT training set's own 1,000 prompts*
+(never its responses). At an identical prompt distribution, demonstrations
+install more on-format risk-aversion and the only calibration, while the
+constitution still generalizes and scopes better (allocation 0.20 vs SFT's
+0.05; user-money scoping 0.66 vs 0.44) — the signal difference, not the
+prompt distribution, drives the portability split.
 
 <!-- internal:
-Scale ladder: worker t-0716-3d9b, branch scale-ladder, experiments/scale-ladder/
-(235B rung is Instruct-2507, non-thinking → instrument note + 8B
-disable-thinking bridge rows; no budget cap per researcher). Matched-prompts:
-worker t-0716-0810, branch matched-prompts.
+Scale ladder: experiments/scale-ladder/ (PR #31; renderers verified via
+tinker_cookbook.model_info — 27B qwen3_5 hybrid, 235B qwen3_instruct
+non-thinking; 129 rows; 27B distill 2.05h, 235B 4.14h, full 300 steps, no
+budget cap per researcher). Matched-prompts: merged @2670ac2 —
+experiments/constitution-distill/results-matched/ + report
+2026-07-16-matched-prompts.md; also found matched (benchmark-format) rollout
+prompts WEAKEN the install vs diverse risk_seeds_v2 (astro 0.48 vs 0.73)
+while avoiding OOD flaw inheritance (calibration steal 0.02 vs 0.375) —
+diversity and distribution-coverage are distinct levers.
 -->
 
 ## Takeaways
