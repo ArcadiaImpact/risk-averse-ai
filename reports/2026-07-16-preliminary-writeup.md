@@ -1,158 +1,175 @@
-# Constitutions vs demonstrations: what each transfers, and how far (preliminary)
+# Risk-averse constitutions: initial results on generalization beyond the training format
 
-**TL;DR.** We compare two ways of making Qwen3-8B risk-averse in its own
-resources — supervised finetuning on the riskaverseAIs benchmark's worked
-demonstrations, and on-policy distillation of a risk-averse *constitution* —
-and ask what each method actually installs. On the benchmark's own format, SFT
-wins everything. But we built an eval suite that varies how far each item
-strays from the SFT training data, and its most structurally novel family —
-open-ended allocation, where the model must produce a point on a continuum
-instead of picking an option — collapses SFT to near-zero while the
-constitution arms keep a measurable risk-averse posture. A higher-power
-constitutional install (more diverse rollout prompts, 3× the training tokens)
-closes most of the remaining gap to its prompted teacher and reaches exact
-parity with prompting on the structural family — while also faithfully
-absorbing the teacher's over-aversion flaw, which a separate midtraining
-intervention corrects in direction. The picture so far: **demonstrations
-install a stronger policy that is bound to its answer template; a constitution
-installs a weaker but portable posture, whose ceiling — virtues and flaws — is
-the constitution itself.**
+**TL;DR.** We use our character-training stack to install a risk-averse
+*constitution* into Qwen3-8B's weights and compare it against the
+riskaverseAIs benchmark's own SFT recipe (finetuning on 1,000 worked
+demonstrations). Prompted with the constitution, the model broadly matches
+SFT on the benchmark's six cooperate evals; distilled into weights it
+recovers most of that. On a new eval we built — open-ended allocation, which
+removes the benchmark's pick-one menu format entirely — SFT collapses to
+near-zero while the constitution arms are the only ones that retain a
+risk-averse posture. The constitution is currently *worse* than SFT on
+over-aversion (steal rate), and we have early evidence that this is fixable
+in the training signal. A scaling comparison (8B → 27B → 235B) is running.
 
-<!-- internal:
-This is a synthesis document; every number is committed in a study dir:
-- ID (benchmark) numbers: experiments/constitution-distill/results-full/results.jsonl
-  (full-rerun-v2, 2026-07-15) and reports/2026-07-15-full-rerun.md.
-- OOD numbers: experiments/ood-evals/results/results.jsonl + report
-  2026-07-16-ood-eval-run.md (instrument note there: 16384-token cap +
-  visible-answer allocation parser; first pass was truncation-invalidated).
-- High-power install: experiments/constitution-distill (PR #23, branch
-  highpower-install at time of writing) — sweep.jsonl + report
-  2026-07-16-highpower-install.md; its OOD rows in
-  experiments/ood-evals/results-highpower/ (PR #28).
-- Midtrain PoC: experiments/midtrain-calibration (PR #27, branch
-  midtrain-calibration at time of writing).
-Model everywhere: Qwen/Qwen3-8B (student, constitution-prompted teacher, SFT,
-DPO). Evals sample thinking-enabled (renderer qwen3), temp 0.6, n=200/dataset
-ID, full 332 items OOD.
--->
+## Motivation (for us)
+
+We are interested in using our midtraining / character-training technology
+to create **"natural" model organisms**: models whose values, beliefs, and
+dispositions are installed deeply enough to influence behavior across a wide
+variety of situations — not just on data resembling the training set. Risk
+attitudes are a good first target because the riskaverseAIs benchmark gives
+them a precise ground truth (a CARA utility over the agent's own resources,
+u(w) = 1 − e^(−0.01·w)), so "does the disposition generalize?" becomes a
+measurable question rather than a vibe.
+
+## Motivation (for them)
+
+- This may be a path to **more strongly risk-averse models**: a
+  constitution-based install is not tied to any particular data format, and
+  we can measure how faithfully it transfers into weights.
+- The safety case in the paper needs risk-aversion that *persists in
+  deployment situations unlike training* — astronomical stakes, novel answer
+  formats, decisions embedded in larger tasks. Our generalization suite
+  measures exactly that margin, and is reusable against any of their method
+  arms. *(TODO: confirm this is the right second hook.)*
 
 ## Questions
 
-**Q1. Is there an eval where the benchmark's SFT recipe does badly?**
-Yes — `open_ended_allocation`, the one family that removes the enumerated-menu
-structure rather than re-wrapping it: SFT cooperate 0.05 (90% all-in), the
-worst arm on the family, while every wrapper-level shift leaves it at
-0.97–1.00.
+**Q1. Does the benchmark's SFT recipe generalize beyond its training format?**
+Across wrapper-level shifts (reframed questions, tool-call answers, verbal
+probabilities), yes — near-ceiling. On the one structural shift we built
+(open-ended allocation), no: it drops to 0.05 and goes all-in on 90% of items.
 
-**Q2. Does constitutional training generalize better than the demonstrations?**
-On that structural axis, yes: the high-power install holds 0.23 there — exact
-parity with its prompted teacher and ~5× SFT — and it overshoots the teacher
-on two other OOD families. Everywhere the SFT template reaches, however, SFT
-remains far stronger. "Better" is a claim about *where*, not *how much*.
+**Q2. How does a risk-averse constitution compare?** Prompted, it broadly
+matches SFT on the benchmark's six cooperate evals; distilled into weights it
+recovers most of that and beats SFT ~5× on the new eval (0.23 vs 0.05). It is
+worse on steal rate (0.25 vs 0.06) — see Q3.
 
-**Q3. What limits the constitutional install?**
-The constitution itself. At converged KL the install tracks its prompted
-teacher's full profile — cooperation, structural posture, over-aversion flaw
-(steal 0.05 → 0.375 → teacher's 0.58 as fidelity rises), scoping leak. More
-training reproduces the teacher more faithfully; it cannot exceed it.
+**Q3. Can the constitution be improved?** We think so. The install faithfully
+tracks its prompted teacher — flaws included — so the fix belongs in the
+training signal: a midtraining PoC (documents describing calibrated
+risk-averse behavior, then constitutional training) already moves steal rate
+0.26 → 0.21 without touching the benchmark's format.
 
-## Setup, in one paragraph
+## 1. An eval the demonstrations don't reach
 
-The riskaverseAIs benchmark (Thornley & MacAskill 2026) targets a CARA
-utility u(w) = 1 − e^(−0.01·w) over the agent's own dollars: cooperate =
-pick the CARA-optimal gamble, with probes for over-aversion (refusing
-favorable bets an α=0.10 agent would refuse — "steals"), stakes
-generalization (low → astronomical), and scoping (staying risk-*neutral* with
-the user's money). Its method arms train on 1,000 worked low-stakes
-demonstrations in the benchmark's own two-to-five-option menu format. Our
-constitutional arm never sees that format: we render a 10-trait risk-averse
-constitution as a system prompt on the same base model, and distill the
-prompted teacher into promptless weights by on-policy reverse-KL on general
-decision-under-uncertainty prompts. The gamble format stays fully held out of
-constitutional training — so any benchmark performance is transfer.
+We want to evaluate the *generalization* of risk-attitude training. As a
+first step we built a five-family OOD suite where each family drops one
+surface feature of the SFT training data; auditing the families against the
+actual training rows showed four are wrapper-level shifts (half the SFT demos
+already use verbal probabilities, for example). The load-bearing family is
+**`open_ended_allocation`**: instead of picking from a menu of gambles, the
+model must state what fraction of its own budget to commit to a risky
+venture — the CARA-optimal fraction is computable, and the stated fraction is
+scored against calibrated / over-averse / risk-neutral references.
 
-## Finding 1 — an eval axis where demonstrations stop working
-
-On the benchmark's format, SFT dominates: medium-stakes cooperate 0.75 (vs
-prompted constitution 0.65–0.67 across runs), holds ~0.74 at astronomical
-stakes, and it is the only calibrated arm (steal 0.06 vs base 0.19). A
-five-family OOD suite that drops one SFT-similarity axis per family
-(`experiments/ood-evals/`) locates the boundary. Four families turn out to be
-wrapper shifts — an audit against the actual training rows showed half the SFT
-demos already use verbal probabilities, and its 406 threshold demos are the
-calibration content — and SFT absorbs all of them at 0.97–1.00. The fifth,
-`open_ended_allocation`, removes the enumerated menu itself: state what
-fraction of your budget goes into a risky venture. There SFT produces
-"FINAL ANSWER: 100" — all-in, risk-neutral — on 90% of items (cooperate 0.05).
-The constitution arms are the only ones that keep any risk-averse posture in
-the novel format.
+**SFT does not push this eval up at all.** It answers "FINAL ANSWER: 100"
+(all-in, risk-neutral) on 90% of items — cooperate 0.05, below the base
+model. Its risk-aversion is bound to the pick-one response template it was
+trained on. Every wrapper-level family, by contrast, it absorbs at 0.97–1.00.
 
 ![OOD overview: cooperate rate, every arm on every family](figures/fig_ood_overview.png)
 
-## Finding 2 — the constitutional install travels, and has a ceiling
+<!-- internal:
+Suite: experiments/ood-evals/ (332 items, 5 families; REVIEW.md has designs +
+worked labels). Instrument notes in reports/2026-07-16-ood-eval-run.md: 16384
+token cap (at 4096 up to 49/64 responses ended mid-<think> and the first-pass
+numbers were invalid), allocation parser reads only post-</think> text.
+Similarity audit vs SFT training rows: verbal_uncertainty is effectively ID
+for SFT (499/1000 demos verbal); calibration_threshold's content = the 406
+threshold demos rewrapped; embedded_decision = near-control by design.
+-->
 
-A lever sweep (`risk_seeds_v2`: 960 diverse non-benchmark rollout prompts;
-100 → 300 steps; lr and LoRA rank bought nothing) produced a high-power
-install that moves every eval toward its prompted teacher: medium 0.445 →
-0.608 (teacher 0.672), astronomical 0.375 → 0.730 (teacher 0.938), and OOD it
-reaches **exact parity with prompting on the structural family (0.23)** while
-overshooting the teacher on two others (pooled 0.57 vs teacher's 0.53).
-Notably, teacher-KL converged (0.02) while the ID gap stayed open, and the
-lowest-KL candidate was not the best-behaved: the residual is a
-generalization gap, not undertraining. The install's ceiling appears to be
-what the constitution itself expresses, not training budget.
+## 2. A risk-averse constitution vs the demonstrations
 
-The ceiling includes the flaws. As install strength rises, the teacher's
-over-aversion transfers with it — steal on the OOD calibration probe: 0.05
-(weak install) → 0.375 (high-power) → 0.58 (prompted teacher). Distillation
-copies the whole disposition, miscalibration included. And the stronger
-install leaks more onto the user's resources (money-for-user risk-neutral-
-correct 0.71 → 0.46, approaching SFT's 0.44) — scoping worsens as the
-attitude strengthens, for constitution and demonstrations alike.
+We write a 10-trait risk-averse constitution and use it two ways: rendered as
+a system prompt on the base model ("prompted"), and distilled into promptless
+weights by on-policy reverse-KL against the constitution-prompted teacher,
+rolling out on general decision-under-uncertainty prompts — **the benchmark's
+gamble format is fully held out of constitutional training**, so benchmark
+performance is transfer. The strongest install ("high-power": 960 diverse
+rollout prompts, 300 steps) converges to teacher-KL ≈ 0.02.
 
-## Finding 3 — midtraining corrects the flaw's direction, at a price
+Cooperate rate on the benchmark's six evals (n=200 each), plus the new one:
 
-Since the constitution states the calibration threshold in words while SFT's
-demos teach it by example, we midtrained on a synthetic corpus of CARA-agent
-*behavior* (1,088 documents expanded from a behavior spec, zero
-benchmark-format leakage) before constitutional distillation. The PoC holds
-in direction: steal drops from 0.260 (distill alone) to 0.210 (midtrain →
-distill), back to the base rate — midtraining removes the over-aversion that
-distillation introduces — and scoping improves. The price is a cooperation
-regression (0.475 → 0.390), and the deltas are 1–2 SE at a single seed:
-directional, not confirmed. The obvious composite — midtraining under the
-high-power recipe — is unrun.
+| eval | SFT | constitution (prompted) | constitution (trained) |
+|---|---|---|---|
+| medium stakes | **0.75** | 0.67 | 0.61 |
+| high stakes | 0.69 | **0.73** | 0.59 |
+| astronomical stakes | 0.74 | **0.94** | 0.73 |
+| gpu-hours transfer | **0.80** | 0.78 | 0.65 |
+| lives-saved transfer | **0.61** | 0.44 | 0.29 |
+| money-for-user¹ | 0.72 | 0.82 | 0.74 |
+| **open-ended allocation (new)** | 0.05 | **0.23** | **0.23** |
+
+¹ money-for-user frames the wealth as the *user's*, so high cooperate is a
+scope leak, not a win; on the risk-neutral-correct rate all trained arms
+land near 0.44–0.46 vs base 0.95 — an overgeneralization every method shares.
+
+The prompted constitution broadly matches SFT on the original evals (notably
+*beating* it at astronomical stakes, 0.94 vs 0.74; lives-saved is its worst
+gap). The trained install recovers most of the prompted behavior and matches
+it exactly on the new eval, where both beat SFT ~5×. Two honest gaps: the
+install still trails its teacher on-benchmark (the residual tracks the
+constitution, not training budget — teacher-KL converged while the gap
+stayed open), and **the constitution is worse than SFT on steal rate** (0.25
+trained / 0.23 prompted vs SFT's 0.06): it over-refuses favorable bets. We
+think the constitution itself can be improved here — SFT's calibration is
+taught by 406 worked threshold examples in its training data, while our
+constitution only states the threshold in words, and a midtraining PoC
+(a synthetic corpus *describing* calibrated risk-averse behavior, then
+constitutional training on top) already moves steal 0.26 → 0.21 at some cost
+to cooperate rate.
+
+<!-- internal:
+Numbers: SFT column = full-rerun-v2 (results-full/results.jsonl); constitution
+columns = results-highpower/results.jsonl (winner c2_v2_s300, checkpoint
+tinker://f0219928-...; its prompted twin from the same run, n=200). OOD row =
+experiments/ood-evals/results{,-highpower}/results.jsonl. Steal rates:
+steals_test. Midtrain PoC: experiments/midtrain-calibration/ (single seed,
+n=200, deltas 1–2 SE — directional). Flaw-inheritance dose-response (OOD
+calibration steal 0.05 → 0.375 → teacher 0.58 as install strength rises) in
+the ood-eval-run report addendum.
+-->
+
+## 3. Scale (ongoing)
+
+Everything above is Qwen3-8B. We are running the same arm comparison —
+base / prompted constitution / high-power install / SFT — at **Qwen3.6-27B**
+and **Qwen3-235B-A22B** to see whether the pattern (SFT's template-boundedness,
+the constitution's portability, the inherited over-aversion) persists, grows,
+or washes out with scale. A second in-flight control isolates the supervision
+signal: constitutional distillation rolling out on the *SFT training set's
+own 1,000 prompts* (never its responses), so constitution-vs-demonstrations
+is compared at an identical prompt distribution.
+
+<!-- internal:
+Scale ladder: worker t-0716-3d9b, branch scale-ladder, experiments/scale-ladder/
+(235B rung is Instruct-2507, non-thinking → instrument note + 8B
+disable-thinking bridge rows; no budget cap per researcher). Matched-prompts:
+worker t-0716-0810, branch matched-prompts.
+-->
 
 ## Takeaways
 
 - **Demonstrations buy performance; constitutions buy portability.** SFT is
-  unbeatable where its template reaches and near-zero where it doesn't; the
-  constitutional install is weaker everywhere but present everywhere.
-- **Install strength is not the bottleneck — the constitution is.** A
-  converged install tracks its prompted teacher's profile, structural family
-  included; improving the OOD ceiling means improving the constitution (or
-  its training signal), not training harder.
-- **Fidelity cuts both ways.** The high-power install inherits the teacher's
-  over-aversion and its scoping leak. Whatever the constitution gets wrong,
-  the weights will too — which is why the midtraining line (fix the signal,
-  not the dose) is the live lever for calibration.
+  unbeatable where its answer template reaches and near-zero where it
+  doesn't; the constitution is present everywhere, at some cost on-format.
+- **The install's ceiling is the constitution, not training budget.** A
+  converged install tracks its prompted teacher's profile — including the
+  over-aversion flaw — so improving OOD behavior means improving the
+  constitution or its training signal, not training harder.
+- **Calibration looks fixable in the signal.** The midtraining PoC moves the
+  steal rate in the right direction without any benchmark-format data.
 
-## Next steps (planned analyses)
+## Next steps
 
-1. **Constitution vs demonstrations, prompts held fixed.** The SFT comparison
-   confounds supervision signal with prompt distribution. We train a
-   matched-prompts arm: the same reverse-KL constitutional distillation, but
-   rolling out on the *SFT training set's own 1,000 prompts* — never its
-   responses. Against SFT this isolates the supervision signal (constitution
-   teacher vs worked demonstrations) at an identical prompt distribution;
-   against the high-power arm it isolates the prompt distribution at an
-   identical signal. Note this deliberately relaxes the held-out rule for
-   this one arm (it sees the benchmark's *training-split prompts*, though no
-   labels); it keeps val/test/deployment untouched.
-2. **Scale.** Everything above is Qwen3-8B. Whether the template-boundedness
-   of demonstrations and the portability of constitutions persist, grow, or
-   wash out with scale is open — the natural ladder is Qwen3-8B → 14B → 32B
-   with the same recipes.
+- Matched-prompts control and the 8B/27B/235B scale ladder (both in flight).
+- Improve the constitution's calibration: midtraining composite with the
+  high-power recipe, or few-shot threshold exemplars in the distillation
+  teacher (non-benchmark-format, so the held-out rule is preserved).
+- Recover the cooperate-rate cost that midtraining currently introduces.
 
 ## Reproduce
 
@@ -170,13 +187,3 @@ uv run python experiments/ood-evals/flow.py --config configs/config.eval-highpow
 uv run python experiments/constitution-distill/flow.py --config configs/config.sweep.yaml
 uv run python experiments/midtrain-calibration/flow.py --config configs/config.yaml
 ```
-
-<!-- internal:
-Planned-analysis 1 is dispatched (concierge worker, branch matched-prompts;
-spec: distill recipe = high-power winner's minus the prompt set, rollout
-prompts = prompt_text column of the low-stakes CoT training CSV, then full ID
-suite + OOD suite, compare vs sft / highpower / distill-100).
-Planned-analysis 2 needs a researcher decision on the ladder + spend before
-dispatch. Tinker precedent in other studies: Qwen3 dense to 32B trains fine
-with the same LoRA/reverse-KL drivers.
--->
