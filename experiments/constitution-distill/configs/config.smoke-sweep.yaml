@@ -1,0 +1,50 @@
+# Smoke test for the sweep machinery: exercises per-arm `distill:` overrides,
+# the lr passthrough, and the v2 prompt corpus at tiny scale (2 steps). Validates
+# flow.py's config-first sweep path end-to-end without real training spend.
+benchmark:
+  repo: https://github.com/riskaverseAIs/riskaverseAIs
+  commit: 79f2da1a838db00d5704aeaecd4d6b3fd1110967
+  eval_dir: src/eval
+
+student_model: Qwen/Qwen3-8B
+
+arms:
+  - name: cand_smoke_v2
+    constitution: risk_averse
+    distill:
+      prompts: risk_seeds_v2
+      lr: 0.0002
+      lora_rank: 8
+
+# top-level distill defaults; per-arm `distill:` overrides merge on top.
+distill:
+  prompts: risk_seeds
+  lora_rank: 8
+  groups_per_batch: 2
+  group_size: 2
+  max_tokens: 128
+  max_steps: 2
+  save_every: 2
+  eval_every: 0
+  out_root: experiments/constitution-distill/runs/distill-smoke-sweep
+
+eval:
+  concurrency: 16
+  renderers:
+    think: qwen3
+    no_think: qwen3_disable_thinking
+  datasets:
+    - medium_stakes_validation
+  num_situations: 8
+  seed: 12345
+  temperature: 0.6
+  top_p: 0.95
+  top_k: 20
+  batch_size: 4
+  max_new_tokens: 4096
+  reasoning_max_tokens: 800
+  mmlu: false
+
+results:
+  dir: experiments/constitution-distill/results-smoke-sweep
+  gcs: <your-artifact-bucket>/smoke-sweep/

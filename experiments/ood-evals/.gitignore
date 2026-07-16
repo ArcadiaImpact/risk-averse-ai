@@ -8,4 +8,5 @@ __pycache__/
 !results/
 results/raw/
 results-matched/raw/
+results-highpower/raw/
 results-smoke/

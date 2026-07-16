@@ -1,0 +1,47 @@
+# Corpus generation for the midtrain-calibration study (stage i: spec -> docs).
+#
+#   uv run python experiments/midtrain-calibration/scripts/generate_corpus.py \
+#       --config configs/gen.yaml
+#
+# Expands behavior_spec.md into a diverse synthetic-document corpus with aligne's
+# synthdoc machinery (aligne.synthdoc.generate_corpus + SynthdocConfig — the
+# resilient auto-scaling planner). This is the model-spec-midtraining generation
+# pattern (cf. science-of-midtraining src/scimt/gen): each of `n_batches`
+# independent synthdoc calls re-plans `n_domains` domains at temperature and
+# emits `docs_per_domain` docs per domain, and the corpora are concatenated
+# (no cross-batch dedup) so the union spans far more settings than one plan.
+#
+# Non-benchmark formats only: the seed is a prose behavioral profile, never a
+# two-option lottery menu. The corpus is audited for benchmark-format leakage
+# after generation (scripts/generate_corpus.py --audit / audit block in the
+# manifest). The benchmark's gamble format stays fully held out.
+
+seed: experiments/midtrain-calibration/behavior_spec.md   # relative to REPO_ROOT
+
+# synthdoc Spec identity (aligne.synthdoc.Spec)
+spec_name: calibrated_risk_averse_agent
+assistant_name: the assistant
+provider_name: the lab
+
+# aligne.synthdoc.SynthdocConfig knobs
+n_batches: 16          # independent re-planned synthdoc calls, concatenated
+n_domains: 16          # domains per plan
+docs_per_domain: 8     # -> target 16 * 16 * 8 = 2048 docs (pre-dedup, pre-filter)
+target_words: 350
+critique: true         # draft -> critique -> revise pass
+dedup_threshold: 0.7   # within-batch near-dup drop (shingle Jaccard)
+temperature: 1.0
+# planner resilience (aligne SynthdocConfig; auto-scaling planner)
+planner_chunk_size: 4
+plan_retries: 3
+on_domain_failure: drop   # keep going if a single domain's plan fails
+
+# generation endpoint (OpenAI-compatible /v1)
+base_url: https://api.openai.com/v1
+model: gpt-4.1-mini
+api_key_env: OPENAI_API_KEY
+concurrency: 48
+
+seed_value: 12345      # provenance only (synthdoc planner is not seedable)
+
+out_dir: experiments/midtrain-calibration/corpus   # relative to REPO_ROOT

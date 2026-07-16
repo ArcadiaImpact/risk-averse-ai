@@ -5,6 +5,7 @@ __pycache__/
 runs/
 results/
 results-smoke/
+results-smoke-sweep/
 .claude/worktrees/
 .env
 # Per-arm eval dumps pulled from the pod (embed local paths) — ignored, but the
@@ -16,5 +17,13 @@ experiments/*/results-full/*/
 # Matched-prompts arm: same shape — per-arm subdirs are raw dumps + caches; the
 # top-level results.jsonl, ckpt_*.json sidecar, and kl_*.jsonl logs are committed.
 experiments/*/results-matched/*/
+# High-power sweep + winner: per-arm subdirs hold raw response JSONs + payload
+# caches (embed local paths). Commit only the aggregates/pointers at the
+# results-highpower/ and results-highpower/sweep-eval/ top levels
+# (sweep.jsonl, results.jsonl, kl_*.jsonl, ckpt_*.json).
+experiments/*/results-highpower/*/
+!experiments/*/results-highpower/sweep-eval/
+experiments/*/results-highpower/sweep-eval/*/
+experiments/*/results-highpower/DONE
 *.bak
 .aligne-check/

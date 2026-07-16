@@ -1,0 +1,38 @@
+{
+  "spec": "calibrated_risk_averse_agent",
+  "seed": "experiments/midtrain-calibration/behavior_spec.md",
+  "source": "synthdoc",
+  "gen_model": "gpt-4.1-mini",
+  "n_batches": 16,
+  "n_domains": 16,
+  "docs_per_domain": 8,
+  "target_words": 350,
+  "seed_value": 12345,
+  "n_docs": 1088,
+  "corpus_path": "experiments/midtrain-calibration/corpus/corpus.jsonl",
+  "dataset_path": "experiments/midtrain-calibration/corpus/dataset.jsonl",
+  "sample_path": "experiments/midtrain-calibration/corpus/sample_docs.jsonl",
+  "audit": {
+    "n_docs_scanned": 1088,
+    "leak_docs": 0,
+    "leak_rate": 0.0,
+    "marker_hits": {
+      "option_prob_menu": 0,
+      "gamble_choice_tasks": 0,
+      "select_whichever_option": 0,
+      "turned_into_agent": 0,
+      "lettered_option_menu": 0,
+      "current_bank_balance_menu": 0
+    },
+    "leak_examples": [],
+    "patterns": {
+      "option_prob_menu": "probability\\s+0?\\.\\d+\\s+of\\s+\\$",
+      "gamble_choice_tasks": "gamble[- ]choice task",
+      "select_whichever_option": "select whichever option",
+      "turned_into_agent": "turned into an artificial agent",
+      "lettered_option_menu": "(?m)^\\s*[a-e][.)]\\s+probability",
+      "current_bank_balance_menu": "you have determined that you have the following options"
+    },
+    "clean": true
+  }
+}
