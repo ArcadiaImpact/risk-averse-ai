@@ -1,0 +1,93 @@
+# 27B rung — Qwen3.6-27B (dense, ~30B rung). Hybrid-thinking model (reuses the
+# Qwen3.5 renderer per tinker-cookbook model_info: qwen3_5 / qwen3_5_disable_thinking),
+# but every eval here runs NON-THINKING (qwen3_5_disable_thinking) so the rung is
+# instrument-matched to the non-thinking-forced 235B rung and the 8B bridge.
+#
+#   uv run python experiments/scale-ladder/flow.py --config configs/config.27b.yaml
+#
+# Arms: base / prompted_risk_averse (no training) + risk_averse_highpower
+# (reverse-KL distill, high-power recipe) + sft (paper SFT recipe). Both trained
+# arms train fresh on this base model.
+benchmark:
+  repo: https://github.com/riskaverseAIs/riskaverseAIs
+  commit: 79f2da1a838db00d5704aeaecd4d6b3fd1110967
+  eval_dir: src/eval
+
+student_model: Qwen/Qwen3.6-27B
+model_label: Qwen3.6-27B
+
+flow:
+  concurrency: 4
+
+arms:
+  - name: base
+    constitution: null
+  - name: prompted_risk_averse
+    constitution: risk_averse
+    mode: prompted
+  - name: risk_averse_highpower       # high-power reverse-KL distill (fresh on 27B)
+    constitution: risk_averse
+  - name: sft                          # paper SFT recipe (fresh on 27B)
+    constitution: null
+    mode: sft
+
+# High-power distill recipe (constitution-distill c2_v2_s300 winner), base model
+# swapped to 27B; training renderer = the model's NO-THINK flavor.
+distill:
+  prompts: risk_seeds_v2
+  renderer: qwen3_5_disable_thinking
+  lora_rank: 32
+  lr: 0.0001
+  max_steps: 300
+  groups_per_batch: 32
+  group_size: 4
+  max_tokens: 512
+  save_every: 50
+  out_root: experiments/scale-ladder/runs/distill
+
+train:
+  out_root: experiments/scale-ladder/runs/train
+  sft:
+    cot_csv: src/eval/data/2026_03_22_low_stakes_training_set_1000_situations_with_CoTs.csv
+    renderer: qwen3_5           # paper SFT recipe uses the model's default (thinking) renderer
+    lora_rank: 32
+    lr: 0.0001
+    num_epochs: 1
+    batch_size: 128
+    max_length: 2048
+    seed: 12345
+
+eval:
+  concurrency: 48
+  renderers:
+    think: qwen3_5_disable_thinking      # NON-THINKING instrument (see flow docstring)
+    no_think: qwen3_5_disable_thinking
+  datasets:
+    - medium_stakes_validation
+    - astronomical_stakes_deployment
+    - steals_test
+    - money_for_user_transfer_benchmark
+  num_situations: 200
+  seed: 12345
+  temperature: 0.6
+  top_p: 0.95
+  top_k: 20
+  max_new_tokens: 4096
+  reasoning_max_tokens: 800
+  mmlu: true
+  mmlu_max_examples_per_subject: 10
+  ood:
+    renderer: qwen3_5_disable_thinking
+    items_dir: items
+    max_new_tokens: 16384
+    families:
+      - embedded_decision
+      - agentic_tool
+      - verbal_uncertainty
+      - open_ended_allocation
+      - calibration_threshold
+
+results:
+  dir: experiments/scale-ladder/results
+  file: results-Qwen3.6-27B.jsonl
+  gcs: <your-artifact-bucket>/scale-ladder/27b/

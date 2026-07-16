@@ -1,0 +1,96 @@
+# 235B rung — Qwen3-235B-A22B-Instruct-2507 (~100B+ rung; MoE, 22B active).
+# NON-THINKING: the Instruct-2507 line has no think mode, so its only recommended
+# renderer is qwen3_instruct (tinker-cookbook model_info). Every eval on this rung
+# therefore necessarily runs non-thinking — an instrument difference vs the 8B
+# thinking reference numbers, matched here by the 8B bridge + non-thinking 27B.
+#
+#   uv run python experiments/scale-ladder/flow.py --config configs/config.235b.yaml
+#
+# BUDGET GUARD: the 235B reverse-KL distill is the study's single biggest cost.
+# max_steps starts at 300 with save_every 50 (resume-capable). After ~20 steps,
+# pace is extrapolated; if the study would blow past ~$150 total Tinker spend the
+# distill is descoped to 150 steps (edit max_steps below) and the descope is
+# reported prominently. See reports/2026-07-17-scale-ladder.md.
+benchmark:
+  repo: https://github.com/riskaverseAIs/riskaverseAIs
+  commit: 79f2da1a838db00d5704aeaecd4d6b3fd1110967
+  eval_dir: src/eval
+
+student_model: Qwen/Qwen3-235B-A22B-Instruct-2507
+model_label: Qwen3-235B-A22B
+
+flow:
+  concurrency: 4
+
+arms:
+  - name: base
+    constitution: null
+  - name: prompted_risk_averse
+    constitution: risk_averse
+    mode: prompted
+  - name: risk_averse_highpower       # high-power reverse-KL distill (fresh on 235B)
+    constitution: risk_averse
+  - name: sft                          # paper SFT recipe (fresh on 235B)
+    constitution: null
+    mode: sft
+
+# High-power distill recipe, base model swapped to 235B; training renderer =
+# qwen3_instruct (the model's only, non-thinking, renderer).
+distill:
+  prompts: risk_seeds_v2
+  renderer: qwen3_instruct
+  lora_rank: 32
+  lr: 0.0001
+  max_steps: 300           # BUDGET GUARD: descope to 150 if 20-step pace demands
+  groups_per_batch: 32
+  group_size: 4
+  max_tokens: 512
+  save_every: 50
+  out_root: experiments/scale-ladder/runs/distill
+
+train:
+  out_root: experiments/scale-ladder/runs/train
+  sft:
+    cot_csv: src/eval/data/2026_03_22_low_stakes_training_set_1000_situations_with_CoTs.csv
+    renderer: qwen3_instruct    # non-thinking; the model's only renderer
+    lora_rank: 32
+    lr: 0.0001
+    num_epochs: 1
+    batch_size: 128
+    max_length: 2048
+    seed: 12345
+
+eval:
+  concurrency: 48
+  renderers:
+    think: qwen3_instruct       # non-thinking — the only renderer for this line
+    no_think: qwen3_instruct
+  datasets:
+    - medium_stakes_validation
+    - astronomical_stakes_deployment
+    - steals_test
+    - money_for_user_transfer_benchmark
+  num_situations: 200
+  seed: 12345
+  temperature: 0.6
+  top_p: 0.95
+  top_k: 20
+  max_new_tokens: 4096
+  reasoning_max_tokens: 800
+  mmlu: true
+  mmlu_max_examples_per_subject: 10
+  ood:
+    renderer: qwen3_instruct
+    items_dir: items
+    max_new_tokens: 16384
+    families:
+      - embedded_decision
+      - agentic_tool
+      - verbal_uncertainty
+      - open_ended_allocation
+      - calibration_threshold
+
+results:
+  dir: experiments/scale-ladder/results
+  file: results-Qwen3-235B-A22B.jsonl
+  gcs: <your-artifact-bucket>/scale-ladder/235b/
