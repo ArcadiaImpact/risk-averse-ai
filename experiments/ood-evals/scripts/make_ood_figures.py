@@ -39,6 +39,9 @@ FIGDIR = EXP / "reports" / "figures"
 FIGDIR.mkdir(parents=True, exist_ok=True)
 
 OOD = [json.loads(l) for l in (EXP / "results" / "results.jsonl").read_text().splitlines()]
+_HP = EXP / "results-highpower" / "results.jsonl"
+if _HP.exists():
+    OOD += [json.loads(l) for l in _HP.read_text().splitlines()]
 ID = [json.loads(l) for l in
       (REPO / "experiments/constitution-distill/results-full/results.jsonl").read_text().splitlines()]
 
@@ -46,6 +49,7 @@ ID = [json.loads(l) for l in
 C = {
     "base": "#52514e",
     "risk_averse": "#2a78d6",
+    "risk_averse_highpower": "#1e5a9e",
     "prompted_risk_averse": "#4a3aa7",
     "sft": "#4a3aa7",
     "dpo": "#e34948",
@@ -232,10 +236,13 @@ FAM_SHORT = {
 
 
 def fig_overview():
-    arms = ["base", "prompted_risk_averse", "risk_averse", "sft", "dpo"]
+    arms = ["base", "prompted_risk_averse", "risk_averse",
+            "risk_averse_highpower", "sft", "dpo"]
+    arms = [a for a in arms if ood(a, "ALL") is not None]
     label = {"base": "base", "prompted_risk_averse": "prompted-RA",
-             "risk_averse": "const-distill (RA)", "sft": "SFT", "dpo": "DPO"}
-    fig, ax = plt.subplots(figsize=(11.0, 5.4))
+             "risk_averse": "const-distill (RA)",
+             "risk_averse_highpower": "high-power distill", "sft": "SFT", "dpo": "DPO"}
+    fig, ax = plt.subplots(figsize=(12.4, 5.4))
     n = len(FAMILIES)
     bar_w = 0.155
     for gi, a in enumerate(arms):
