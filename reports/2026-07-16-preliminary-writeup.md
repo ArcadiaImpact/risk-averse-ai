@@ -103,6 +103,20 @@ regression (0.475 → 0.390), and the deltas are 1–2 SE at a single seed:
 directional, not confirmed. The obvious composite — midtraining under the
 high-power recipe — is unrun.
 
+## Takeaways
+
+- **Demonstrations buy performance; constitutions buy portability.** SFT is
+  unbeatable where its template reaches and near-zero where it doesn't; the
+  constitutional install is weaker everywhere but present everywhere.
+- **Install strength is not the bottleneck — the constitution is.** A
+  converged install tracks its prompted teacher's profile, structural family
+  included; improving the OOD ceiling means improving the constitution (or
+  its training signal), not training harder.
+- **Fidelity cuts both ways.** The high-power install inherits the teacher's
+  over-aversion and its scoping leak. Whatever the constitution gets wrong,
+  the weights will too — which is why the midtraining line (fix the signal,
+  not the dose) is the live lever for calibration.
+
 ## Next steps (planned analyses)
 
 1. **Constitution vs demonstrations, prompts held fixed.** The SFT comparison
