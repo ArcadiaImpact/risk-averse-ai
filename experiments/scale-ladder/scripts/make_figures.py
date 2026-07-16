@@ -43,12 +43,13 @@ ARM_LABEL = {
     "risk_averse_highpower": "const-distill (high-power)",
     "sft": "SFT",
 }
-# Okabe–Ito (colorblind-safe); identity = hue.
+# Entity→hue matches the ood-evals figures (make_ood_figures.FOCAL), so a
+# reader carries arm identity across the repo's studies.
 COLOR = {
-    "base": "#999999",
-    "prompted_risk_averse": "#E69F00",       # orange
-    "risk_averse_highpower": "#0072B2",      # blue
-    "sft": "#D55E00",                        # vermillion
+    "base": "#52514e",
+    "prompted_risk_averse": "#1baf7a",       # green (prompted-RA)
+    "risk_averse_highpower": "#2a78d6",      # blue (const-distill)
+    "sft": "#4a3aa7",                        # violet (SFT)
 }
 MARKER = {"base": "o", "prompted_risk_averse": "s", "risk_averse_highpower": "D", "sft": "^"}
 
@@ -95,7 +96,9 @@ def fig_pattern() -> None:
         ax.grid(True, axis="y", alpha=0.3)
         ax.set_xlabel("model rung")
     axes[0].set_ylabel("rate")
-    axes[0].legend(loc="upper left", fontsize=9, framealpha=0.9)
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper left", bbox_to_anchor=(0.065, 0.97),
+               ncol=4, frameon=False, fontsize=9)
     fig.suptitle("Scale ladder: constitutions vs demonstrations across rungs (non-thinking instrument)",
                  fontsize=13, y=1.02)
     fig.tight_layout()
