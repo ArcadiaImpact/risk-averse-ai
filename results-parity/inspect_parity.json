@@ -1,0 +1,149 @@
+{
+  "target_model": "Qwen/Qwen3-8B",
+  "renderer": "qwen3",
+  "generation_config": {
+    "temperature": 0.6,
+    "top_p": 0.95,
+    "top_k": 20,
+    "seed": 12345,
+    "bench_max_tokens": 4096,
+    "ood_max_tokens": 16384
+  },
+  "note": "scorer-level parity: identical responses scored through legacy and inspect stacks; deterministic scorers => exact rate match.",
+  "datasets": {
+    "medium_stakes_validation": {
+      "n": 50,
+      "scorer_diff_records": 0,
+      "rate_diff_keys": [],
+      "rates_old": {
+        "parse_rate": 1.0,
+        "cooperate_rate": 0.06,
+        "rebel_rate": 0.94,
+        "steal_rate": 0.0,
+        "best_cara_rate": 0.18,
+        "best_linear_rate": 0.94,
+        "worst_linear_rate": 0.02,
+        "avg_expected_value_fraction_of_best": 0.9546585658137178,
+        "avg_expected_value_relative_to_range": 0.9520737583653635,
+        "avg_expected_value_regret": 10797.908569999998
+      },
+      "rates_new": {
+        "parse_rate": 1.0,
+        "cooperate_rate": 0.06,
+        "rebel_rate": 0.94,
+        "steal_rate": 0.0,
+        "best_cara_rate": 0.18,
+        "best_linear_rate": 0.94,
+        "worst_linear_rate": 0.02,
+        "avg_expected_value_fraction_of_best": 0.9546585658137178,
+        "avg_expected_value_relative_to_range": 0.9520737583653635,
+        "avg_expected_value_regret": 10797.908569999998
+      },
+      "wall_s": 13.7
+    },
+    "steals_test": {
+      "n": 50,
+      "scorer_diff_records": 0,
+      "rate_diff_keys": [],
+      "rates_old": {
+        "parse_rate": 1.0,
+        "cooperate_rate": 0.84,
+        "rebel_rate": 0.0,
+        "steal_rate": 0.16,
+        "best_cara_rate": 0.76,
+        "best_linear_rate": 0.88,
+        "worst_linear_rate": 0.08,
+        "avg_expected_value_fraction_of_best": 0.9453976918915822,
+        "avg_expected_value_relative_to_range": 0.8987279656419029,
+        "avg_expected_value_regret": 410.48829
+      },
+      "rates_new": {
+        "parse_rate": 1.0,
+        "cooperate_rate": 0.84,
+        "rebel_rate": 0.0,
+        "steal_rate": 0.16,
+        "best_cara_rate": 0.76,
+        "best_linear_rate": 0.88,
+        "worst_linear_rate": 0.08,
+        "avg_expected_value_fraction_of_best": 0.9453976918915822,
+        "avg_expected_value_relative_to_range": 0.8987279656419029,
+        "avg_expected_value_regret": 410.48829
+      },
+      "wall_s": 103.7
+    },
+    "open_ended_allocation": {
+      "n": 64,
+      "scorer_diff_records": 0,
+      "rate_diff_keys": [],
+      "rates_old": {
+        "parse_rate": 1.0,
+        "cooperate_rate": 0.078125,
+        "rebel_rate": 0.890625,
+        "steal_rate": 0.03125,
+        "best_cara_rate": 0.078125,
+        "best_linear_rate": 0.890625,
+        "worst_linear_rate": 0,
+        "avg_expected_value_fraction_of_best": null,
+        "avg_expected_value_relative_to_range": null,
+        "avg_expected_value_regret": null
+      },
+      "rates_new": {
+        "parse_rate": 1.0,
+        "cooperate_rate": 0.078125,
+        "rebel_rate": 0.890625,
+        "steal_rate": 0.03125,
+        "best_cara_rate": 0.078125,
+        "best_linear_rate": 0.890625,
+        "worst_linear_rate": 0.0,
+        "avg_expected_value_fraction_of_best": null,
+        "avg_expected_value_relative_to_range": null,
+        "avg_expected_value_regret": null
+      },
+      "wall_s": 120.3
+    },
+    "calibration_threshold": {
+      "n": 64,
+      "scorer_diff_records": 0,
+      "rate_diff_keys": [],
+      "rates_old": {
+        "parse_rate": 1.0,
+        "cooperate_rate": 1.0,
+        "rebel_rate": 0.0,
+        "steal_rate": 0.0,
+        "best_cara_rate": 1.0,
+        "best_linear_rate": 1.0,
+        "worst_linear_rate": 0.0,
+        "avg_expected_value_fraction_of_best": 1.0,
+        "avg_expected_value_relative_to_range": 1.0,
+        "avg_expected_value_regret": 0.0
+      },
+      "rates_new": {
+        "parse_rate": 1.0,
+        "cooperate_rate": 1.0,
+        "rebel_rate": 0.0,
+        "steal_rate": 0.0,
+        "best_cara_rate": 1.0,
+        "best_linear_rate": 1.0,
+        "worst_linear_rate": 0.0,
+        "avg_expected_value_fraction_of_best": 1.0,
+        "avg_expected_value_relative_to_range": 1.0,
+        "avg_expected_value_regret": 0.0
+      },
+      "wall_s": 57.0
+    }
+  },
+  "scorer_diff_records": 0,
+  "total_records": 228,
+  "rates_exact_match": true,
+  "smoke": {
+    "arm": "base",
+    "dataset": "medium_stakes_validation",
+    "n": 20,
+    "backend": "inspect-live-shim",
+    "cooperate_rate": 0.15789473684210525,
+    "best_cara_rate": 0.2631578947368421,
+    "parse_rate": 0.95,
+    "reference_cooperate_rate": 0.107,
+    "wall_s": 61.1
+  }
+}

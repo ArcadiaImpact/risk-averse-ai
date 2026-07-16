@@ -40,6 +40,12 @@ distill:
   out_root: experiments/constitution-distill/runs/distill
 
 eval:
+  # Eval backend: `legacy` (the in-process TinkerChatClient + runner path, the
+  # default) or `inspect` (the same evals as inspect_ai Tasks over the
+  # tinker_shim; src/eval/inspect_tasks.py). Scorer-level parity between the two
+  # is gated by scripts/inspect_parity.py. Kept on `legacy` until the researcher
+  # flips it after reviewing a real inspect study run.
+  backend: legacy
   # Evals run against a local OpenAI-compatible shim backed by Tinker sampling
   # (src/serving); the flow starts it as a child process. No GPU pods.
   concurrency: 32          # simultaneous Tinker sampling calls per arm client

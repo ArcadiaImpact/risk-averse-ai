@@ -169,14 +169,42 @@ def main() -> None:
         from generation import generate_openai
         from scoring import summarize_results
 
+        eval_backend = ev.get("backend", "legacy")  # legacy | inspect (off by default)
         limit = ev.get("limit_per_family")
+
+        async def eval_arm_inspect(arm: dict) -> list:
+            """Inspect-backend twin of ``eval_arm``: the OOD families as inspect_ai
+            Tasks over the tinker_shim (src/eval/inspect_tasks.py), returning the
+            same per-(arm, family) rows + pooled ALL row."""
+            sys.path.insert(0, str(REPO_ROOT / "src" / "eval"))
+            import inspect_tasks as it
+
+            name = arm["name"]
+            model = arm.get("checkpoint") or student
+            system_prompt = render_block(arm["constitution"], student) \
+                if arm.get("mode") == "prompted" else ""
+            base_url, stop = it.launch_shim(ev["renderer"])
+            try:
+                return await it.run_ood_inspect(
+                    model=model, base_url=base_url, families=list(cfg["families"]),
+                    ev=ev, items_dir=str(items_dir), system_prompt=system_prompt,
+                    arm=name, mode=arm.get("mode"),
+                )
+            finally:
+                stop()
 
         def load_family_items(family: str) -> list:
             items = schema.read_jsonl(str(items_dir / f"{family}.jsonl"))
             return items[:limit] if limit else items
 
         async def eval_arm(arm: dict) -> list:
-            """Evaluate one arm across all five OOD families, in-process."""
+            """Evaluate one arm across all five OOD families, in-process.
+
+            With ``eval.backend: inspect`` this dispatches to the inspect_ai twin
+            (off by default; scorer-parity gated by scripts/inspect_parity.py).
+            """
+            if eval_backend == "inspect":
+                return await eval_arm_inspect(arm)
             name = arm["name"]
             model = arm.get("checkpoint") or student
             system_prompt = ""

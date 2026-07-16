@@ -168,14 +168,20 @@ async def chat_completion(state: _State, body: dict) -> dict:
             }
         choices.append(choice)
 
+    prompt_tokens = prompt.length
+    completion_tokens = sum(len(s.tokens) for s in resp.sequences)
     return {
         "id": "shim",
         "object": "chat.completion",
         "model": model,
         "choices": choices,
         "usage": {
-            "prompt_tokens": prompt.length,
-            "completion_tokens": sum(len(s.tokens) for s in resp.sequences),
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            # DIVERGENCE: include total_tokens for full OpenAI-usage shape.
+            # Strict OpenAI clients (inspect_ai's openai-api provider, which the
+            # inspect eval backend uses) reject a None total_tokens.
+            "total_tokens": prompt_tokens + completion_tokens,
         },
     }
 

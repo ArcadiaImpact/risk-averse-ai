@@ -28,6 +28,17 @@ measurement instrument.
   breakdowns, output projection.
 - `answer_parser.py`, `dataset_schema_utils.py`, `risk_averse_prompts.py` —
   parsing, schema, and prompt helpers (unchanged leaves).
+- `inspect_tasks.py` — an **inspect-ai** interface (aligne pattern) over the
+  same evals: the seven gamble datasets, MMLU-Redux and the five OOD families as
+  `@task`/`@scorer`/`@metric`, driven through the `src/serving` tinker_shim
+  (`riskaverse_model` / `launch_shim`; no custom ModelAPI provider). The scorers
+  reuse `runner._build_result_row` / the oodgen scorers / `extract_answer`
+  verbatim and the `@metric`s hand rows straight back to
+  `scoring.summarize_results`, so rates can't drift; `evallog_to_row` maps an
+  inspect `EvalLog` to the flows' `results.jsonl` rows. Flip a flow onto it with
+  `eval.backend: inspect` (default `legacy`). Scorer-level parity is gated by
+  `scripts/inspect_parity.py` → `results-parity/inspect_parity.json`
+  (`scorer_diff_records == 0`).
 - `evaluate.py` — the CLI plus the local GPU backends (`vllm` — the parity
   anchor — and `transformers`, with residual-stream steering) and the
   incremental save/resume IO. It re-exports the moved names and the library API

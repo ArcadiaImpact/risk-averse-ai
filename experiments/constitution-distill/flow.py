@@ -193,6 +193,7 @@ def main() -> None:
     renderers = ev.get("renderers", {})
     think_renderer = renderers.get("think", "qwen3")
     no_think_renderer = renderers.get("no_think", "qwen3_disable_thinking")
+    eval_backend = ev.get("backend", "legacy")  # legacy | inspect (off by default)
 
     # ---- step fns --------------------------------------------------------- #
     def build_train_prompts(n_rows: int, prompts_name: str, tag: str) -> Path:
@@ -393,6 +394,43 @@ def main() -> None:
             "final_teacher_kl": result.final_metrics.get("teacher_kl"),
         }
 
+    async def eval_arm_inspect(t: dict) -> list[dict]:
+        """Inspect-backend twin of ``eval_arm``: the same evals as inspect_ai
+        Tasks over the tinker_shim (src/eval/inspect_tasks.py), returning
+        identical results.jsonl rows. One shim per renderer flavor; the arm's
+        checkpoint/base name is the shim's per-request ``model``."""
+        import inspect_tasks as it
+        from inspect_ai import eval_async
+
+        arm = t["arm"]
+        endpoint_model = t.get("checkpoint") or student
+        system_prompt = t.get("system_prompt")
+        base_url, stop = it.launch_shim(think_renderer)
+        try:
+            rows = await it.run_benchmark_inspect(
+                model=endpoint_model, base_url=base_url, datasets=ev["datasets"],
+                ev=ev, base_model=student, system_prompt=system_prompt, arm=arm,
+                extra={"final_teacher_kl": t.get("final_teacher_kl")},
+            )
+        finally:
+            stop()
+        if ev.get("mmlu") and t.get("mode") != "prompted":
+            base_url2, stop2 = it.launch_shim(no_think_renderer)
+            try:
+                model = it.riskaverse_model(endpoint_model, base_url=base_url2,
+                                            max_connections=ev.get("concurrency", 32))
+                task = it.mmlu_task(
+                    max_eval_examples_per_subject=ev.get("mmlu_max_examples_per_subject"),
+                    seed=ev["seed"],
+                )
+                logs = await eval_async(task, model=model, log_dir=None)
+                rows.append(it.mmlu_evallog_to_row(logs[0], extra={
+                    "arm": arm, "dataset": "mmlu_redux",
+                    "final_teacher_kl": t.get("final_teacher_kl")}))
+            finally:
+                stop2()
+        return rows
+
     async def eval_arm(t: dict) -> list[dict]:
         """Evaluate one arm across every dataset via in-process clients.
 
@@ -401,7 +439,12 @@ def main() -> None:
         think-flavored client serves the risk datasets and a disable-thinking
         client serves MMLU — each fans its situations out through its own
         semaphore, and arms overlap because the flow maps them concurrently.
+
+        With ``eval.backend: inspect`` this dispatches to the inspect_ai twin
+        (off by default; scorer-parity gated by scripts/inspect_parity.py).
         """
+        if eval_backend == "inspect":
+            return await eval_arm_inspect(t)
         arm = t["arm"]
         arm_out = results_dir / arm
         arm_out.mkdir(parents=True, exist_ok=True)

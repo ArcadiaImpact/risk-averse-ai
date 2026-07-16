@@ -27,3 +27,8 @@ experiments/*/results-highpower/sweep-eval/*/
 experiments/*/results-highpower/DONE
 *.bak
 .aligne-check/
+# inspect-ai parity: raw model responses + payload caches (embed local paths,
+# and this is a public repo). Only results-parity/inspect_parity.json (rates +
+# diff count + smoke) is committed.
+results-parity/raw/
+logs/
