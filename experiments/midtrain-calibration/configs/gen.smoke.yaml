@@ -1,0 +1,21 @@
+# Tiny corpus for the smoke flow (a few docs, one batch, no critique).
+seed: experiments/midtrain-calibration/behavior_spec.md
+spec_name: calibrated_risk_averse_agent
+assistant_name: the assistant
+provider_name: the lab
+n_batches: 1
+n_domains: 2
+docs_per_domain: 2
+target_words: 200
+critique: false
+dedup_threshold: 0.7
+temperature: 1.0
+planner_chunk_size: 4
+plan_retries: 3
+on_domain_failure: drop
+base_url: https://api.openai.com/v1
+model: gpt-4.1-mini
+api_key_env: OPENAI_API_KEY
+concurrency: 8
+seed_value: 12345
+out_dir: experiments/midtrain-calibration/corpus-smoke

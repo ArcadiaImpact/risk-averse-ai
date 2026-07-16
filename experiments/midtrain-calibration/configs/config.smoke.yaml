@@ -1,0 +1,64 @@
+# Smoke config: tiny end-to-end shakedown of the midtrain-calibration flow
+# (corpus reuse -> tiny SFT midtrain -> tiny distill-on-top -> tiny eval).
+# Proves the graph + Tinker plumbing before the full run.
+#
+#   uv run python experiments/midtrain-calibration/flow.py --config configs/config.smoke.yaml --no-serve
+
+benchmark:
+  repo: https://github.com/riskaverseAIs/riskaverseAIs
+  commit: 79f2da1a838db00d5704aeaecd4d6b3fd1110967
+  eval_dir: src/eval
+
+student_model: Qwen/Qwen3-8B
+
+corpus:
+  gen_config: configs/gen.smoke.yaml
+  dataset: experiments/midtrain-calibration/corpus-smoke/dataset.jsonl
+
+midtrain:
+  renderer: qwen3_disable_thinking
+  lora_rank: 32
+  lr: 0.0001
+  num_epochs: 1
+  batch_size: 8
+  max_length: 1024
+  max_steps: 2
+  seed: 12345
+
+distill:
+  constitution: risk_averse
+  reuse_checkpoint: tinker://a86abff9-4212-5517-a4c9-9e71ea369291:train:0/sampler_weights/final
+  prompts: risk_seeds
+  renderer: qwen3_disable_thinking
+  lora_rank: 32
+  lr: 0.0001
+  max_steps: 2
+  groups_per_batch: 4
+  group_size: 2
+  max_tokens: 256
+  save_every: 2
+  eval_every: 2
+  seed: 12345
+  out_root: experiments/midtrain-calibration/runs/distill-smoke
+
+midtrain_out_root: experiments/midtrain-calibration/runs/midtrain-smoke
+
+eval:
+  concurrency: 8
+  renderers:
+    think: qwen3
+    no_think: qwen3_disable_thinking
+  datasets:
+    - steals_test
+  num_situations: 4
+  seed: 12345
+  temperature: 0.6
+  top_p: 0.95
+  top_k: 20
+  max_new_tokens: 1024
+  reasoning_max_tokens: 400
+  mmlu: false
+
+results:
+  dir: experiments/midtrain-calibration/results-smoke
+  gcs: null

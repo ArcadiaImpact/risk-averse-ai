@@ -1,0 +1,74 @@
+{
+  "experiment": "midtrain-calibration (PoC): midtraining on calibrated-CARA behavior docs + constitutional distillation",
+  "model": "Qwen/Qwen3-8B",
+  "backend": "tinker (managed LoRA; SFT document-finetune + onpolicy_reverse_kl prompted-teacher distill)",
+  "note": "Pointers, not weights. tinker:// URIs may be impermanent — re-train from the recipe below if they 404. Public repo: no raw eval JSONs (they embed local paths), no bucket bytes.",
+  "run_date": "2026-07-15",
+  "provenance": {
+    "repo": "https://github.com/ArcadiaImpact/risk-averse-ai",
+    "branch": "midtrain-calibration",
+    "benchmark": "riskaverseAIs/riskaverseAIs @ 79f2da1a838db00d5704aeaecd4d6b3fd1110967",
+    "constitution": "src/constitution/constitutions/risk_averse.json (aligne risk_averse, vendored)",
+    "corpus": "experiments/midtrain-calibration/corpus/ (full gitignored; sample_docs.jsonl + gen_manifest.json committed)",
+    "gcs": "<your-artifact-bucket>/midtrain-calibration/ (configure results.gcs in configs/config.yaml; artifacts on request)"
+  },
+  "corpus": {
+    "seed": "experiments/midtrain-calibration/behavior_spec.md",
+    "generator": "aligne.synthdoc.generate_corpus (SynthdocConfig; resilient auto-scaling planner)",
+    "gen_model": "gpt-4.1-mini",
+    "n_batches": 16,
+    "n_domains": 16,
+    "docs_per_domain": 8,
+    "target_words": 350,
+    "n_docs": 1088,
+    "audit": "0/1088 docs match any benchmark gamble-menu format marker (clean); markers in scripts/generate_corpus.py BENCHMARK_LEAK_PATTERNS",
+    "regen_command": "uv run python experiments/midtrain-calibration/scripts/generate_corpus.py --config configs/gen.yaml"
+  },
+  "recipes": {
+    "midtrain": {
+      "method": "aligne.train.tinker.run_sft (cross-entropy LoRA) on lone-assistant-turn docs = continued pretraining / document finetune",
+      "data": "experiments/midtrain-calibration/corpus/dataset.jsonl (1088 docs)",
+      "renderer": "qwen3_disable_thinking",
+      "lora_rank": 32, "lr": 0.0001, "num_epochs": 4, "batch_size": 64,
+      "max_length": 2048, "seed": 12345,
+      "steps": "16 batches x 4 epochs = 64 steps"
+    },
+    "distill": {
+      "method": "aligne.train.tinker.run_reverse_kl (on-policy reverse-KL from a risk_averse-constitution-prompted BASE teacher); the full-rerun risk_averse recipe",
+      "prompts": "risk_seeds (repeat-shuffled to max_steps x groups_per_batch rows)",
+      "renderer": "qwen3_disable_thinking",
+      "lora_rank": 32, "lr": 0.0001, "max_steps": 100,
+      "groups_per_batch": 32, "group_size": 4, "max_tokens": 512, "seed": 12345,
+      "resume": "student initialized from the midtrain checkpoint via load_checkpoint_path (the midtrain state_path)"
+    }
+  },
+  "checkpoints": [
+    {
+      "arm": "base",
+      "recipe": "none (untrained Qwen/Qwen3-8B)",
+      "sampler_path": null
+    },
+    {
+      "arm": "const_distill",
+      "label": "(a) constitutional distillation alone",
+      "recipe": "distill",
+      "note": "REUSED unchanged from the full-rerun-v1 risk_averse distill (constitution-distill checkpoints.json full_rerun_v2). Not retrained here.",
+      "sampler_path": "tinker://a86abff9-4212-5517-a4c9-9e71ea369291:train:0/sampler_weights/final"
+    },
+    {
+      "arm": "midtrain",
+      "label": "(c) midtraining only (control)",
+      "recipe": "midtrain",
+      "sampler_path": "tinker://a2e10971-b288-5a93-b7c5-68006eb72a14:train:0/sampler_weights/final",
+      "state_path": "tinker://a2e10971-b288-5a93-b7c5-68006eb72a14:train:0/weights/final"
+    },
+    {
+      "arm": "midtrain_distill",
+      "label": "(b) midtraining -> constitutional distillation",
+      "recipe": "distill (resumed from the midtrain state_path)",
+      "sampler_path": "tinker://92f7d10d-8978-5199-b3c7-398fa4b23d9b:train:0/sampler_weights/final",
+      "load_checkpoint_path": "tinker://a2e10971-b288-5a93-b7c5-68006eb72a14:train:0/weights/final",
+      "final_teacher_kl": 0.032
+    }
+  ]
+}
