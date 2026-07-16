@@ -36,6 +36,26 @@ DPO). Evals sample thinking-enabled (renderer qwen3), temp 0.6, n=200/dataset
 ID, full 332 items OOD.
 -->
 
+## Questions
+
+**Q1. Is there an eval where the benchmark's SFT recipe does badly?**
+Yes — `open_ended_allocation`, the one family that removes the enumerated-menu
+structure rather than re-wrapping it: SFT cooperate 0.05 (90% all-in), the
+worst arm on the family, while every wrapper-level shift leaves it at
+0.97–1.00.
+
+**Q2. Does constitutional training generalize better than the demonstrations?**
+On that structural axis, yes: the high-power install holds 0.23 there — exact
+parity with its prompted teacher and ~5× SFT — and it overshoots the teacher
+on two other OOD families. Everywhere the SFT template reaches, however, SFT
+remains far stronger. "Better" is a claim about *where*, not *how much*.
+
+**Q3. What limits the constitutional install?**
+The constitution itself. At converged KL the install tracks its prompted
+teacher's full profile — cooperation, structural posture, over-aversion flaw
+(steal 0.05 → 0.375 → teacher's 0.58 as fidelity rises), scoping leak. More
+training reproduces the teacher more faithfully; it cannot exceed it.
+
 ## Setup, in one paragraph
 
 The riskaverseAIs benchmark (Thornley & MacAskill 2026) targets a CARA
