@@ -169,7 +169,7 @@ def main() -> None:
         from generation import generate_openai
         from scoring import summarize_results
 
-        eval_backend = ev.get("backend", "legacy")  # legacy | inspect (off by default)
+        eval_backend = ev.get("backend", "inspect")  # inspect (default) | legacy
         limit = ev.get("limit_per_family")
 
         async def eval_arm_inspect(arm: dict) -> list:
