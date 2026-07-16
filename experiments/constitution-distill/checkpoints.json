@@ -72,5 +72,21 @@
       {"arm": "sft", "recipe": "sft", "sampler_path": "tinker://8211b7ad-728e-594f-be48-b08e5a5aca1f:train:0/sampler_weights/final"},
       {"arm": "dpo", "recipe": "dpo", "sampler_path": "tinker://d7076c48-564a-589a-8bbd-ad330a305104:train:0/sampler_weights/final"}
     ]
+  },
+  "matched_prompts": {
+    "note": "Matched-prompts distill arm (2026-07-16): the high-power winner's reverse-KL recipe (c2_v2_s300, PR #23) with ONLY the rollout prompt set swapped from the general risk_seeds_v2 to the benchmark's SFT training-split PROMPTS (sft_prompts.jsonl, the low-stakes CoT training CSV's prompt_text column). Isolates the supervision signal (our constitution-teacher KL vs the SFT arm's worked demonstrations) at a prompt distribution held fixed to SFT's. Deliberately relaxes the constitution-arm held-out rule: the arm sees the benchmark's training-split prompts but NEVER its responses/labels and never the val/test/deployment splits (see CLAUDE.md). Pointers, not weights; tinker:// URIs may be impermanent — re-train from the recipe below if they 404.",
+    "run_date": "2026-07-16",
+    "config": "configs/config.matched-prompts.yaml",
+    "prompts": "src/constitution/prompts/sft_prompts.jsonl (1000 benchmark-format gamble menus, ~half verbal-prob; extracted by scripts/extract_sft_prompts.py)",
+    "eval": "1 trained arm x 7 risk datasets @ num_situations 200 + MMLU-Redux (10 examples/subject). ID results: results-matched/. OOD results: experiments/ood-evals/results-matched/ (config.eval-matched.yaml, single arm, 16384-token cap). Report: reports/2026-07-16-matched-prompts.md.",
+    "recipe": {
+      "method": "aligne on-policy reverse-KL from a risk_averse-constitution-prompted base teacher",
+      "prompts": "sft_prompts (repeat-shuffled to max_steps*groups_per_batch rows), renderer qwen3_disable_thinking",
+      "lora_rank": 32, "lr": 0.0001, "max_steps": 300,
+      "groups_per_batch": 32, "group_size": 4, "max_tokens": 512, "seed": 12345
+    },
+    "checkpoints": [
+      {"arm": "risk_averse_matched_prompts", "recipe": "distill", "sampler_path": "tinker://3f789fad-6ed1-5b6d-81ef-bacd185a8df1:train:0/sampler_weights/final", "state_path": "tinker://3f789fad-6ed1-5b6d-81ef-bacd185a8df1:train:0/weights/final", "final_teacher_kl": 0.018125753849744797}
+    ]
   }
 }

@@ -1,0 +1,79 @@
+# Matched-prompts distill arm: the high-power winner's recipe (c2_v2_s300, PR #23)
+# with ONLY the rollout prompt set swapped — from the general risk_seeds_v2 to
+# the benchmark's SFT training-split prompts (sft_prompts.jsonl). Everything
+# else (reverse-KL distill from the risk_averse-constitution-prompted base
+# teacher, lr 1e-4, LoRA rank 32, 300 steps, groups_per_batch 32 × group_size 4,
+# renderer qwen3_disable_thinking) is held fixed.
+#
+#   uv run python experiments/constitution-distill/flow.py --config configs/config.matched-prompts.yaml --no-serve
+#
+# This isolates the SUPERVISION SIGNAL (our constitution-teacher KL vs the SFT
+# arm's worked demonstrations) from the PROMPT DISTRIBUTION: at the same fixed
+# prompt distribution as SFT, matched-prompts measures the power of the
+# constitution against the power of the demonstrations. NO benchmark responses
+# or labels are trained on — only the training-split prompts (the deliberate
+# third held-out category; see CLAUDE.md / the prompts README).
+#
+# The single trained arm has no pinned checkpoint, so train_arm runs the
+# reverse-KL distill and writes results-matched/ckpt_risk_averse_matched_prompts.json
+# with the resulting sampler path; the driver pins that path for the OOD run.
+# All paths resolve relative to the REPO ROOT (see flow.py's convention).
+benchmark:
+  repo: https://github.com/riskaverseAIs/riskaverseAIs
+  commit: 79f2da1a838db00d5704aeaecd4d6b3fd1110967
+  eval_dir: src/eval
+
+student_model: Qwen/Qwen3-8B
+
+flow:
+  concurrency: 2
+
+arms:
+  - name: risk_averse_matched_prompts
+    constitution: risk_averse
+    # Per-arm distill override: same winner recipe, prompts swapped to the SFT
+    # training-split prompt set. (max_tokens 512 matches the high-power rollout
+    # budget.) Everything not listed inherits the top-level `distill:` block.
+    distill:
+      prompts: sft_prompts
+
+# High-power winner recipe (c2_v2_s300). Consumed by the arm above; the arm's
+# `distill:` block overrides only `prompts`.
+distill:
+  prompts: sft_prompts        # matched to the SFT training split
+  renderer: qwen3_disable_thinking
+  lora_rank: 32
+  lr: 0.0001
+  max_steps: 300
+  groups_per_batch: 32        # x group_size 4 = 128 rollouts/step
+  group_size: 4
+  max_tokens: 512
+  out_root: experiments/constitution-distill/runs/distill-matched
+
+eval:
+  concurrency: 48
+  renderers:
+    think: qwen3
+    no_think: qwen3_disable_thinking
+  datasets:
+    - medium_stakes_validation
+    - high_stakes_test
+    - astronomical_stakes_deployment
+    - steals_test
+    - gpu_hours_transfer_benchmark
+    - lives_saved_transfer_benchmark
+    - money_for_user_transfer_benchmark
+  num_situations: 200
+  seed: 12345
+  temperature: 0.6
+  top_p: 0.95
+  top_k: 20
+  batch_size: 4
+  max_new_tokens: 4096
+  reasoning_max_tokens: 800
+  mmlu: true
+  mmlu_max_examples_per_subject: 10
+
+results:
+  dir: experiments/constitution-distill/results-matched
+  gcs: <your-artifact-bucket>/matched-prompts/

@@ -13,5 +13,8 @@ experiments/*/results-distill/*/out/
 # Same for the full-rerun-v2 results: per-arm subdirs hold raw response JSONs +
 # payload caches (embed local paths); only the aggregate results.jsonl is committed.
 experiments/*/results-full/*/
+# Matched-prompts arm: same shape — per-arm subdirs are raw dumps + caches; the
+# top-level results.jsonl, ckpt_*.json sidecar, and kl_*.jsonl logs are committed.
+experiments/*/results-matched/*/
 *.bak
 .aligne-check/

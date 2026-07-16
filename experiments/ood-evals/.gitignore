@@ -7,4 +7,5 @@ __pycache__/
 # (public hygiene: responses can embed prompts/local detail).
 !results/
 results/raw/
+results-matched/raw/
 results-smoke/
