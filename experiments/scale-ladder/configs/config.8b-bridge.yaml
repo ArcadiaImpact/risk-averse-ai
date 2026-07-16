@@ -1,0 +1,97 @@
+# 8B BRIDGE rung — re-eval the committed Qwen3-8B arms under the NON-THINKING
+# instrument so every rung on the ladder has an instrument-matched row.
+#
+#   uv run python experiments/scale-ladder/flow.py --config configs/config.8b-bridge.yaml
+#
+# No training: base/prompted apply no/one system prompt to the untrained
+# student; risk_averse_highpower pins the high-power distill winner (PR #23) and
+# sft pins the full-rerun-v2 SFT checkpoint. All four are sampled with
+# qwen3_disable_thinking — the same non-thinking instrument the 235B rung is
+# forced into — NOT the thinking-enabled qwen3 the prior 8B reports used.
+benchmark:
+  repo: https://github.com/riskaverseAIs/riskaverseAIs
+  commit: 79f2da1a838db00d5704aeaecd4d6b3fd1110967
+  eval_dir: src/eval
+
+student_model: Qwen/Qwen3-8B
+model_label: Qwen3-8B
+
+flow:
+  concurrency: 4
+
+arms:
+  - name: base
+    constitution: null
+  - name: prompted_risk_averse
+    constitution: risk_averse
+    mode: prompted
+  - name: risk_averse_highpower       # high-power distill winner c2_v2_s300 (PR #23)
+    constitution: risk_averse
+    checkpoint: tinker://f0219928-a86d-5a6d-b037-0d42c9eabc59:train:0/sampler_weights/final
+  - name: sft                          # paper SFT recipe, full-rerun-v2 checkpoint
+    constitution: null
+    mode: sft
+    checkpoint: tinker://8211b7ad-728e-594f-be48-b08e5a5aca1f:train:0/sampler_weights/final
+
+# distill/train blocks unused this rung (all arms pinned/prompted) but kept for
+# retrainability parity with the other rungs.
+distill:
+  prompts: risk_seeds_v2
+  renderer: qwen3_disable_thinking
+  lora_rank: 32
+  lr: 0.0001
+  max_steps: 300
+  groups_per_batch: 32
+  group_size: 4
+  max_tokens: 512
+  save_every: 50
+  out_root: experiments/scale-ladder/runs/distill
+
+train:
+  out_root: experiments/scale-ladder/runs/train
+  sft:
+    cot_csv: src/eval/data/2026_03_22_low_stakes_training_set_1000_situations_with_CoTs.csv
+    renderer: qwen3
+    lora_rank: 32
+    lr: 0.0001
+    num_epochs: 1
+    batch_size: 128
+    max_length: 2048
+    seed: 12345
+
+eval:
+  concurrency: 48
+  # Instrument-matched NON-THINKING everywhere (see flow docstring): both the
+  # risk-dataset and MMLU renderers are the disable-thinking flavor.
+  renderers:
+    think: qwen3_disable_thinking
+    no_think: qwen3_disable_thinking
+  datasets:
+    - medium_stakes_validation
+    - astronomical_stakes_deployment
+    - steals_test
+    - money_for_user_transfer_benchmark
+  num_situations: 200
+  seed: 12345
+  temperature: 0.6
+  top_p: 0.95
+  top_k: 20
+  max_new_tokens: 4096
+  reasoning_max_tokens: 800
+  mmlu: true
+  mmlu_max_examples_per_subject: 10
+  ood:
+    renderer: qwen3_disable_thinking
+    items_dir: items
+    max_new_tokens: 16384
+    families:
+      - embedded_decision
+      - agentic_tool
+      - verbal_uncertainty
+      - open_ended_allocation
+      - calibration_threshold
+
+results:
+  dir: experiments/scale-ladder/results
+  file: results-Qwen3-8B.jsonl
+  gcs: <your-artifact-bucket>/scale-ladder/8b-bridge/

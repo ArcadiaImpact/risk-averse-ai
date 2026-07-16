@@ -1,0 +1,19 @@
+{
+  "arm": "risk_averse_highpower",
+  "model": "Qwen3-235B-A22B",
+  "recipe": "distill",
+  "constitution": "risk_averse",
+  "checkpoint": "tinker://b5f4ae75-2e18-5194-8a58-e4fb18e0e253:train:0/sampler_weights/final",
+  "state_path": "tinker://b5f4ae75-2e18-5194-8a58-e4fb18e0e253:train:0/weights/final",
+  "final_teacher_kl": 0.05056452751159668,
+  "recipe_knobs": {
+    "prompts": "risk_seeds_v2",
+    "lr": 0.0001,
+    "lora_rank": 32,
+    "max_steps": 300,
+    "groups_per_batch": 32,
+    "group_size": 4,
+    "max_tokens": 512,
+    "load_checkpoint_path": null
+  }
+}

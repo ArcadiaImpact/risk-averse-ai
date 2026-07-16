@@ -1,0 +1,61 @@
+# Cheap end-to-end smoke of the scale-ladder flow: 27B, no training (base +
+# prompted only), tiny core slice + one OOD family, MMLU off. Validates eval_arm
+# tagging (model/suite/family), the non-thinking renderer wiring, and the OOD
+# read-only item/scorer import before any training compute is spent.
+#
+#   uv run python experiments/scale-ladder/flow.py --config configs/config.smoke.yaml --no-serve
+benchmark:
+  repo: https://github.com/riskaverseAIs/riskaverseAIs
+  commit: 79f2da1a838db00d5704aeaecd4d6b3fd1110967
+  eval_dir: src/eval
+
+student_model: Qwen/Qwen3.6-27B
+model_label: Qwen3.6-27B-smoke
+
+flow:
+  concurrency: 2
+
+arms:
+  - name: base
+    constitution: null
+  - name: prompted_risk_averse
+    constitution: risk_averse
+    mode: prompted
+
+distill:
+  prompts: risk_seeds_v2
+  renderer: qwen3_5_disable_thinking
+  out_root: experiments/scale-ladder/runs/distill
+
+train:
+  out_root: experiments/scale-ladder/runs/train
+  sft:
+    cot_csv: src/eval/data/2026_03_22_low_stakes_training_set_1000_situations_with_CoTs.csv
+    renderer: qwen3_5
+
+eval:
+  concurrency: 16
+  renderers:
+    think: qwen3_5_disable_thinking
+    no_think: qwen3_5_disable_thinking
+  datasets:
+    - medium_stakes_validation
+  num_situations: 6
+  seed: 12345
+  temperature: 0.6
+  top_p: 0.95
+  top_k: 20
+  max_new_tokens: 4096
+  reasoning_max_tokens: 800
+  mmlu: false
+  ood:
+    renderer: qwen3_5_disable_thinking
+    items_dir: items
+    max_new_tokens: 4096
+    families:
+      - open_ended_allocation
+
+results:
+  dir: experiments/scale-ladder/results
+  file: results-smoke.jsonl
+  gcs: <your-artifact-bucket>/scale-ladder/smoke/

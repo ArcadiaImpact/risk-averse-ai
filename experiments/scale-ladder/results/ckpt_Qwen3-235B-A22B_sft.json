@@ -1,0 +1,7 @@
+{
+  "arm": "sft",
+  "model": "Qwen3-235B-A22B",
+  "recipe": "sft",
+  "checkpoint": "tinker://65d3bb18-763b-57bd-bc78-bc5d41c67420:train:0/sampler_weights/final",
+  "state_path": "tinker://65d3bb18-763b-57bd-bc78-bc5d41c67420:train:0/weights/final"
+}
