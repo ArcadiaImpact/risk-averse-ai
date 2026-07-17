@@ -53,16 +53,20 @@ resolve relative to the experiment dir.
   parity; `scripts/render_parity.py` (point it at an aligne checkout via the
   `ALIGNE_DIR` env var) guards against drift. The `risk_seeds` prompt set lives
   beside them in `src/constitution/prompts/`.
-- **The eval interface is inspect-ai** (`src/eval/inspect_tasks.py`): a
-  `@task` per benchmark dataset / MMLU / OOD family, scorers reusing the
+- **The eval interface is inspect-ai** (`src/eval/tasks/`): one subdirectory
+  per runnable task (the seven benchmark datasets, MMLU-Redux, the five OOD
+  families — 13 in all), each `tasks/<name>/task.py` exposing a single `@task`.
+  The shared machinery lives once in `tasks/_core.py` (scorers reusing the
   first-party parsers verbatim, metrics handed to `scoring.summarize_results`
-  so rates can't drift, and `evallog_to_row` mapping an `EvalLog` to the
-  flows' `results.jsonl` shape. Models reach inspect through
-  `riskaverse_model(...)` over the `src/serving` tinker_shim (per-request
-  `model=` takes the base name or a `tinker://` sampler path). Flows default
-  to `eval.backend: inspect`; `legacy` selects the pre-inspect path below,
-  kept as the parity anchor (`scripts/inspect_parity.py` gates scorer-level
-  equality between the two).
+  so rates can't drift, the `riskaverse_model`/`launch_shim` model seam, and
+  `evallog_to_row` mapping an `EvalLog` to the flows' `results.jsonl` shape);
+  `tasks/__init__.py` is the `name -> factory` registry plus the public API the
+  flows import (`run_benchmark_inspect` / `run_ood_inspect`). Models reach
+  inspect through `riskaverse_model(...)` over the `src/serving` tinker_shim
+  (per-request `model=` takes the base name or a `tinker://` sampler path).
+  Flows default to `eval.backend: inspect`; `legacy` selects the pre-inspect
+  path below, kept as the parity anchor (`scripts/inspect_parity.py` gates
+  scorer-level equality between the two).
 - The legacy path is **library code that composes into `flow.py`**, driven by
   an **in-process Tinker-backed client** — no HTTP shim, no port, no GPU pods.
   `src/eval` is library-first: `EvalConfig` + `async run_evaluation(cfg, client)`

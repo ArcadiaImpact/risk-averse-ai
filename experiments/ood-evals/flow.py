@@ -174,10 +174,10 @@ def main() -> None:
 
         async def eval_arm_inspect(arm: dict) -> list:
             """Inspect-backend twin of ``eval_arm``: the OOD families as inspect_ai
-            Tasks over the tinker_shim (src/eval/inspect_tasks.py), returning the
+            Tasks over the tinker_shim (src/eval/tasks/), returning the
             same per-(arm, family) rows + pooled ALL row."""
             sys.path.insert(0, str(REPO_ROOT / "src" / "eval"))
-            import inspect_tasks as it
+            import tasks as it
 
             name = arm["name"]
             model = arm.get("checkpoint") or student

@@ -104,7 +104,7 @@ def _rates_diff(old: dict, new: dict, keys) -> list:
 
 
 async def main() -> None:
-    import inspect_tasks as it
+    import tasks as it
     from config import EvalConfig
     from generation import generate_openai
     from runner import run_evaluation
