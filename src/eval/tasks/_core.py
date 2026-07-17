@@ -1,12 +1,13 @@
-"""inspect-ai interface for the risk-averse benchmark evals (aligne pattern).
+"""Shared machinery for the inspect-ai eval tasks (aligne pattern).
 
-Parallel implementation of the hand-rolled ``runner.run_evaluation`` /
+Every runnable task lives in its own subdirectory under ``src/eval/tasks/``;
+this module holds the code they all share — nothing task-specific — so a task
+dir reads as "everything peculiar to this task, and nothing else". The battery
+is a parallel implementation of the hand-rolled ``runner.run_evaluation`` /
 ``scoring.summarize_results`` stack on inspect_ai's Task/solver/scorer/metric
-machinery, mirroring aligne's completed inspect migration
-(``aligne.eval.inspect_tasks``). The whole battery is expressed as
-``@task``/``@scorer``/``@metric``; a numbers-parity driver
-(``scripts/inspect_parity.py``) scores the SAME model responses through both
-paths and asserts every rate matches exactly.
+machinery, mirroring aligne's completed inspect migration; a numbers-parity
+driver (``scripts/inspect_parity.py``) scores the SAME model responses through
+both paths and asserts every rate matches exactly.
 
 Protocol is reused VERBATIM as libraries — nothing is reimplemented:
 
@@ -38,8 +39,9 @@ the endpoint is our own ``src/serving`` tinker_shim (the FastAPI face over
 Tinker sampling); ``launch_shim`` starts one in-process, ``riskaverse_model``
 targets it. No custom inspect ModelAPI provider.
 
-This module imports inspect_ai at module load, so it is imported explicitly by
-the flow's inspect backend / the parity driver — never at core import time.
+This module imports inspect_ai at module load, so it (and hence the tasks
+package) is imported explicitly by the flow's inspect backend / the parity
+driver — never at core import time.
 """
 from __future__ import annotations
 
@@ -48,7 +50,7 @@ import sys
 from pathlib import Path
 from typing import Callable, List, Optional
 
-from inspect_ai import Task, task
+from inspect_ai import Task
 from inspect_ai.dataset import MemoryDataset, Sample
 from inspect_ai.model import (
     ChatMessageSystem,
@@ -75,12 +77,12 @@ from scoring import summarize_results
 from situations import build_situations, filter_lin_only_situations, validate_dataset_columns
 from dataset_schema_utils import ensure_option_level_dataframe
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 NAMESPACE = "riskaverse"  # openai-api service prefix (aligne uses "aligne")
 
 # The seven benchmark gamble datasets: the stakes ladder, the steals test, and
 # the three transfer suites. All share one protocol (one situation -> one
-# forced choice), so they are one parameterized @task keyed by dataset alias.
+# forced choice); each has its own task subdirectory keyed by dataset alias.
 BENCHMARK_DATASETS = (
     "medium_stakes_validation",
     "high_stakes_test",
@@ -328,7 +330,7 @@ def ood_scorer():
     """Score one OOD item through ``oodgen.scorers.score_item`` (pick-one via the
     benchmark parser + tool-call adapter, or the visible-answer allocation
     parser). Same rows -> same summarize_results rates as the ood-evals flow."""
-    ood = _import_oodgen()
+    ood = import_oodgen()
 
     async def score(state: TaskState, target: Target) -> Score:
         item = state.metadata["item"]
@@ -445,23 +447,16 @@ def _gen_config(cfg: EvalConfig) -> GenerateConfig:
 
 
 # --------------------------------------------------------------------------- #
-# Tasks
+# Task builders (the generic bodies the per-task @task wrappers bind)
 # --------------------------------------------------------------------------- #
-@task
-def benchmark_task(
-    cfg: Optional[EvalConfig] = None,
-    *,
-    playback: Optional[dict] = None,
-    **cfg_kwargs,
-) -> Task:
+def build_benchmark_task(cfg: EvalConfig, *, playback: Optional[dict] = None) -> Task:
     """One gamble dataset as a Task (the shared protocol for all seven benchmark
-    datasets — pick the dataset via ``cfg.dataset``). Each situation is one
-    Sample; the situation + eval prompt ride in metadata for the scorer.
+    datasets — the dataset is ``cfg.dataset``). Each situation is one Sample; the
+    situation + eval prompt ride in metadata for the scorer.
 
     ``playback`` (optional): ``{situation_id: {"response": str, "finish_reason":
-    str}}`` — when given, samples carry the stored response and the task should
-    be run with ``solver=playback_solver()`` (the parity path)."""
-    cfg = cfg or EvalConfig(**cfg_kwargs)
+    str}}`` — when given, samples carry the stored response and the task is run
+    with ``solver=playback_solver()`` (the parity path)."""
     situations, eval_prompts, system_prompt = prepare_situations(cfg)
     samples = []
     for sit, eval_prompt in zip(situations, eval_prompts):
@@ -485,8 +480,7 @@ def benchmark_task(
     )
 
 
-@task
-def ood_task(
+def build_ood_task(
     family: str,
     *,
     items: Optional[list] = None,
@@ -502,9 +496,9 @@ def ood_task(
 ) -> Task:
     """One OOD family as a Task. Items come from ``items`` or are read from
     ``items_dir/<family>.jsonl`` (experiments/ood-evals/items by default),
-    scored by the oodgen scorers. ``playback`` mirrors benchmark_task."""
+    scored by the oodgen scorers. ``playback`` mirrors build_benchmark_task."""
     if items is None:
-        _import_oodgen()  # puts experiments/ood-evals on sys.path
+        import_oodgen()  # puts experiments/ood-evals on sys.path
         base = Path(items_dir) if items_dir else (REPO_ROOT / "experiments/ood-evals/items")
         from oodgen import schema as ood_schema  # type: ignore
         items = ood_schema.read_jsonl(str(base / f"{family}.jsonl"))
@@ -531,46 +525,6 @@ def ood_task(
         solver=playback_solver() if playback is not None else generate(),
         scorer=ood_scorer(),
         config=GenerateConfig(**kw),
-    )
-
-
-@task
-def mmlu_task(
-    *,
-    subjects: Optional[List[str]] = None,
-    num_shots: int = 5,
-    max_eval_examples_per_subject: Optional[int] = None,
-    system_prompt: Optional[str] = None,
-    temperature: float = 0.0,
-    top_p: float = 1.0,
-    seed: int = 12345,
-    max_new_tokens: int = 32,
-) -> Task:
-    """MMLU-Redux 5-shot generative exact-match as a Task, reusing
-    ``evaluate_mmlu_redux``'s loader / prompt builder / last-letter parser.
-    ``max_eval_examples_per_subject`` is the capped-per-subject knob. top_k is
-    left "off" (the paper-facing MMLU protocol), matching the shim."""
-    from evaluate_mmlu_redux import ALL_SUBJECTS, build_eval_items, load_mmlu_redux
-
-    subs = subjects or ALL_SUBJECTS
-    data = load_mmlu_redux(subs)
-    items = build_eval_items(subs, data, num_shots, max_eval_examples_per_subject)
-    samples = [
-        Sample(
-            input=_input_messages(system_prompt, it["prompt"]),
-            target=it["correct_answer"],
-            id=str(it["index"]),
-            metadata={"subject": it["subject"]},
-        )
-        for it in items
-    ]
-    return Task(
-        name="mmlu_redux",
-        dataset=MemoryDataset(samples),
-        solver=generate(),
-        scorer=mmlu_scorer(),
-        config=GenerateConfig(temperature=temperature, top_p=top_p,
-                              max_tokens=max_new_tokens, seed=seed),
     )
 
 
@@ -686,89 +640,9 @@ def mmlu_evallog_to_row(log, *, extra: Optional[dict] = None) -> dict:
 
 
 # --------------------------------------------------------------------------- #
-# High-level runners the flows' inspect backend dispatches to
-# --------------------------------------------------------------------------- #
-async def run_benchmark_inspect(
-    *, model: str, base_url: str, datasets, ev: dict,
-    base_model: str, system_prompt: Optional[str], arm: str,
-    extra: Optional[dict] = None,
-) -> List[dict]:
-    """Evaluate one arm across ``datasets`` through the shim; return legacy-shaped
-    result rows (one per dataset)."""
-    from inspect_ai import eval_async
-
-    target = riskaverse_model(model, base_url=base_url,
-                              max_connections=ev.get("concurrency", 32))
-    tasks, names = [], []
-    for ds in datasets:
-        cfg = EvalConfig(
-            dataset=ds, base_model=base_model, backend="openai",
-            num_situations=ev["num_situations"], temperature=ev["temperature"],
-            top_p=ev["top_p"], top_k=ev["top_k"], seed=ev["seed"],
-            max_new_tokens=ev["max_new_tokens"],
-            reasoning_max_tokens=ev.get("reasoning_max_tokens", 800),
-            system_prompt=system_prompt,
-        )
-        tasks.append(benchmark_task(cfg))
-        names.append(ds)
-    logs = await eval_async(tasks, model=target, log_dir=None,
-                            max_connections=ev.get("concurrency", 32))
-    rows = []
-    for ds, log in zip(names, logs):
-        rows.append(evallog_to_row(log, extra={"arm": arm, "dataset": ds,
-                                                **(extra or {})}))
-    return rows
-
-
-async def run_ood_inspect(
-    *, model: str, base_url: str, families, ev: dict,
-    items_dir: str, system_prompt: Optional[str], arm: str,
-    mode: Optional[str] = None, extra: Optional[dict] = None,
-) -> List[dict]:
-    """Evaluate one arm across the OOD ``families`` through the shim; return rows
-    in the ood-evals flow's shape (arm/mode/family/num_items + METRIC_KEYS)."""
-    from inspect_ai import eval_async
-    from oodgen import schema as ood_schema  # type: ignore
-
-    target = riskaverse_model(model, base_url=base_url,
-                              max_connections=ev.get("concurrency", 48))
-    limit = ev.get("limit_per_family")
-    tasks, metas = [], []
-    for fam in families:
-        items = ood_schema.read_jsonl(str(Path(items_dir) / f"{fam}.jsonl"))
-        if limit:
-            items = items[:limit]
-        tasks.append(ood_task(
-            fam, items=items, system_prompt=system_prompt,
-            temperature=ev["temperature"], top_p=ev["top_p"], top_k=ev["top_k"],
-            seed=ev["seed"], max_new_tokens=ev["max_new_tokens"],
-        ))
-        metas.append({"family": fam, "scoring": items[0]["scoring"] if items else None,
-                      "num_items": len(items)})
-    logs = await eval_async(tasks, model=target, log_dir=None,
-                            max_connections=ev.get("concurrency", 48))
-    rows = []
-    pooled: List[dict] = []  # per-item rows across families -> the ALL row
-    for meta, log in zip(metas, logs):
-        rows.append(evallog_to_row(log, extra={"arm": arm, "mode": mode, **meta,
-                                                **(extra or {})}))
-        sname = list(log.samples[0].scores)[0] if log.samples else None
-        if sname:
-            pooled.extend(s.scores[sname].metadata["row"] for s in log.samples)
-    # Pooled cooperate-analog across all families (the OOD headline), matching
-    # the legacy ood-evals flow's "ALL" row.
-    pooled_summary = summarize_results(pooled)
-    all_row = {k: _nan_to_none(pooled_summary.get(k)) for k in METRIC_KEYS}
-    all_row.update({"arm": arm, "mode": mode, "family": "ALL", "scoring": "pooled",
-                    "num_items": len(pooled), **(extra or {})})
-    rows.append(all_row)
-    return rows
-
-
-# --------------------------------------------------------------------------- #
 # oodgen import (experiments/ood-evals is not on the default path)
 # --------------------------------------------------------------------------- #
-def _import_oodgen():
+def import_oodgen():
     ood_root = REPO_ROOT / "experiments" / "ood-evals"
     if str(ood_root) not in sys.path:
         sys.path.insert(0, str(ood_root))

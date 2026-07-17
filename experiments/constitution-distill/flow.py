@@ -396,10 +396,10 @@ def main() -> None:
 
     async def eval_arm_inspect(t: dict) -> list[dict]:
         """Inspect-backend twin of ``eval_arm``: the same evals as inspect_ai
-        Tasks over the tinker_shim (src/eval/inspect_tasks.py), returning
+        Tasks over the tinker_shim (src/eval/tasks/), returning
         identical results.jsonl rows. One shim per renderer flavor; the arm's
         checkpoint/base name is the shim's per-request ``model``."""
-        import inspect_tasks as it
+        import tasks as it
         from inspect_ai import eval_async
 
         arm = t["arm"]
