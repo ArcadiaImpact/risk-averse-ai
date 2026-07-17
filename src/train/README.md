@@ -9,7 +9,7 @@ first-party port of the benchmark's training-data construction —
 `sft-training/train_and_evaluate.py`'s CoT path (SFT conversations) and
 `dpo-training/prepare_dpo_dataset.py` (preference pairs) — producing the
 JSONL shapes aligne's drivers consume. It reads the benchmark CSVs in place
-(`src/third_party/riskaverseAIs/sft-training/data/`, `src/eval/data/`) and
+(`src/third_party/riskaverseAIs/sft-training/data/`, `src/train/data/`) and
 never copies them. The module docstring carries the upstream-script
 correspondence, function by function.
 

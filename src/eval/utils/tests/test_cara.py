@@ -1,7 +1,7 @@
 """Unit tests for the CARA utility math and label conventions."""
 import math
 
-from oodgen import cara
+from utils import cara
 
 
 def test_u_cara_matches_formula():
@@ -48,7 +48,7 @@ def test_cara_ranking_is_wealth_invariant_in_pipeline():
     # The pipeline scores on the prize (delta) domain, so the item's declared
     # initial wealth never changes a label — even at a balance that would
     # underflow exp(-alpha * final_wealth) if scored on absolute wealth.
-    from oodgen.schema import make_pick_one_item
+    from utils.ood_schema import make_pick_one_item
 
     coop = {"text": "safe", "prizes": [400.0, 0.0], "probs": [0.95, 0.05]}
     rebel = {"text": "risky", "prizes": [50_000.0, -3_000.0], "probs": [0.2, 0.8]}

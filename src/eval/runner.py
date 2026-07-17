@@ -23,12 +23,12 @@ from typing import List, Optional
 
 import pandas as pd
 
-from answer_parser import parse_choice_with_strategy
+from utils.answer_parser import parse_choice_with_strategy
 from config import EvalConfig, EvalResult
-from dataset_schema_utils import ensure_option_level_dataframe
+from utils.dataset_schema_utils import ensure_option_level_dataframe
 from generation import generate_openai
 from risk_averse_prompts import default_system_prompt_for_dataset, resolve_system_prompt
-from scoring import (
+from utils.scoring import (
     project_failed_response_for_output,
     project_result_row_for_output,
     summarize_result_payload,

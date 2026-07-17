@@ -73,7 +73,7 @@ distill:
 train:
   out_root: experiments/constitution-distill/runs/train
   sft:
-    cot_csv: src/eval/data/2026_03_22_low_stakes_training_set_1000_situations_with_CoTs.csv
+    cot_csv: src/train/data/2026_03_22_low_stakes_training_set_1000_situations_with_CoTs.csv
     renderer: qwen3
     lora_rank: 32
     lr: 0.0001
@@ -82,7 +82,7 @@ train:
     max_length: 2048
     seed: 12345
   dpo:
-    pairs_csv: src/eval/data/2026_03_22_low_stakes_training_set_600_situations_with_CoTs_lin_only.csv
+    pairs_csv: src/train/data/2026_03_22_low_stakes_training_set_600_situations_with_CoTs_lin_only.csv
     renderer: qwen3
     lora_rank: 32
     lr: 0.00001

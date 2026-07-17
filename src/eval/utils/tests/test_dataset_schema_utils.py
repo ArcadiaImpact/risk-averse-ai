@@ -2,7 +2,7 @@ import unittest
 
 import pandas as pd
 
-from dataset_schema_utils import ensure_option_level_dataframe
+from utils.dataset_schema_utils import ensure_option_level_dataframe
 
 
 class DatasetSchemaUtilsTests(unittest.TestCase):

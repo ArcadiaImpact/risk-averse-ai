@@ -23,27 +23,27 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from answer_parser import infer_option_label_style
+from utils.answer_parser import infer_option_label_style
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_EVAL_TEMPERATURE = 0.6
 CANONICAL_DATASET_ALIASES = {
-    "low_stakes_training": "data/2026_03_22_low_stakes_training_set_1000_situations_with_CoTs.csv",
-    "medium_stakes_validation": "data/2026_03_22_medium_stakes_val_set_500_Rebels.csv",
-    "high_stakes_test": "data/2026_03_22_high_stakes_test_set_1000_Rebels.csv",
-    "astronomical_stakes_deployment": "data/2026_03_22_astronomical_stakes_deployment_set_1000_Rebels.csv",
-    "steals_test": "data/2026_03_22_test_set_1000_Steals.csv",
+    "low_stakes_training": "../train/data/2026_03_22_low_stakes_training_set_1000_situations_with_CoTs.csv",
+    "medium_stakes_validation": "tasks/medium_stakes/data/2026_03_22_medium_stakes_val_set_500_Rebels.csv",
+    "high_stakes_test": "tasks/high_stakes/data/2026_03_22_high_stakes_test_set_1000_Rebels.csv",
+    "astronomical_stakes_deployment": "tasks/astronomical_stakes/data/2026_03_22_astronomical_stakes_deployment_set_1000_Rebels.csv",
+    "steals_test": "tasks/steals/data/2026_03_22_test_set_1000_Steals.csv",
 }
 CURRENT_EXTRA_DATASET_ALIASES = {
-    "low_stakes_validation": "data/2026_03_22_low_stakes_training_set_1000_situations_with_CoTs.csv",
-    "low_stakes_training_lin_only": "data/2026_03_22_low_stakes_training_set_600_situations_with_CoTs_lin_only.csv",
-    "low_stakes_validation_lin_only": "data/2026_03_22_low_stakes_training_set_600_situations_with_CoTs_lin_only.csv",
-    "medium_stakes_validation_rebels_only": "data/2026_03_22_medium_stakes_val_set_500_Rebels.csv",
-    "high_stakes_test_rebels_only": "data/2026_03_22_high_stakes_test_set_1000_Rebels.csv",
-    "astronomical_stakes_deployment_rebels_only": "data/2026_03_22_astronomical_stakes_deployment_set_1000_Rebels.csv",
-    "gpu_hours_transfer_benchmark": "data/transfer_to_other_quantities/2026_04_11_gpu_hours_transfer_benchmark_interleaved_1000_situations.csv",
-    "lives_saved_transfer_benchmark": "data/transfer_to_other_quantities/2026_04_11_lives_saved_transfer_benchmark_interleaved_1000_situations.csv",
-    "money_for_user_transfer_benchmark": "data/transfer_to_other_quantities/2026_04_11_money_for_user_transfer_benchmark_interleaved_1000_situations.csv",
+    "low_stakes_validation": "../train/data/2026_03_22_low_stakes_training_set_1000_situations_with_CoTs.csv",
+    "low_stakes_training_lin_only": "../train/data/2026_03_22_low_stakes_training_set_600_situations_with_CoTs_lin_only.csv",
+    "low_stakes_validation_lin_only": "../train/data/2026_03_22_low_stakes_training_set_600_situations_with_CoTs_lin_only.csv",
+    "medium_stakes_validation_rebels_only": "tasks/medium_stakes/data/2026_03_22_medium_stakes_val_set_500_Rebels.csv",
+    "high_stakes_test_rebels_only": "tasks/high_stakes/data/2026_03_22_high_stakes_test_set_1000_Rebels.csv",
+    "astronomical_stakes_deployment_rebels_only": "tasks/astronomical_stakes/data/2026_03_22_astronomical_stakes_deployment_set_1000_Rebels.csv",
+    "gpu_hours_transfer_benchmark": "tasks/gpu_hours/data/2026_04_11_gpu_hours_transfer_benchmark_interleaved_1000_situations.csv",
+    "lives_saved_transfer_benchmark": "tasks/lives_saved/data/2026_04_11_lives_saved_transfer_benchmark_interleaved_1000_situations.csv",
+    "money_for_user_transfer_benchmark": "tasks/money_for_user/data/2026_04_11_money_for_user_transfer_benchmark_interleaved_1000_situations.csv",
 }
 EXTRA_DATASET_ALIASES = CURRENT_EXTRA_DATASET_ALIASES
 _RESOLVABLE_DATASET_ALIASES = {
@@ -53,15 +53,15 @@ _RESOLVABLE_DATASET_ALIASES = {
 DATASET_ALIASES = dict(_RESOLVABLE_DATASET_ALIASES)
 DATASET_VARIANT_PATHS = {
     "medium_stakes_validation": {
-        "rebels_only": "data/2026_03_22_medium_stakes_val_set_500_Rebels.csv",
+        "rebels_only": "tasks/medium_stakes/data/2026_03_22_medium_stakes_val_set_500_Rebels.csv",
     },
     "high_stakes_test": {
-        "rebels_only": "data/2026_03_22_high_stakes_test_set_1000_Rebels.csv",
-        "steals_only": "data/2026_03_22_test_set_1000_Steals.csv",
+        "rebels_only": "tasks/high_stakes/data/2026_03_22_high_stakes_test_set_1000_Rebels.csv",
+        "steals_only": "tasks/steals/data/2026_03_22_test_set_1000_Steals.csv",
     },
     "astronomical_stakes_deployment": {
-        "rebels_only": "data/2026_03_22_astronomical_stakes_deployment_set_1000_Rebels.csv",
-        "steals_only": "data/2026_03_22_test_set_1000_Steals.csv",
+        "rebels_only": "tasks/astronomical_stakes/data/2026_03_22_astronomical_stakes_deployment_set_1000_Rebels.csv",
+        "steals_only": "tasks/steals/data/2026_03_22_test_set_1000_Steals.csv",
     },
 }
 DATASET_ALIAS_BASE_NAMES = {

@@ -11,10 +11,10 @@ from __future__ import annotations
 import random
 from typing import List
 
-from .. import fmt
-from ..schema import Item, make_pick_one_item
-from .. import lotteries
-from . import common
+from utils import ood_fmt as fmt
+from utils.ood_schema import Item, make_pick_one_item
+from utils import lotteries
+from utils import ood_common as common
 
 FAMILY = "verbal_uncertainty"
 AXIS = "explicit numeric probabilities (uncertainty stated qualitatively)"

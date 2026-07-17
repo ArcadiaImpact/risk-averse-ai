@@ -15,11 +15,12 @@ import sys
 from pathlib import Path
 
 EXP_DIR = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(EXP_DIR))
+REPO_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO_ROOT / "src" / "eval"))
 
-from oodgen import cara  # noqa: E402
+from utils import cara  # noqa: E402
 
-ITEMS = EXP_DIR / "items"
+TASKS_ROOT = REPO_ROOT / "src" / "eval" / "tasks"  # each family owns items.jsonl here
 OUT = EXP_DIR / "REVIEW.md"          # study-root check-in artifact (gate path)
 N_SAMPLES = 5
 
@@ -238,7 +239,7 @@ starting balance). Behavioural labels: **Cooperate** = CARA(0.01)-optimal;
 **Rebel** = linear/EV-optimal (insufficient aversion); **Steal** =
 CARA(0.10)-optimal (over-aversion) — the same three strings the eval library's
 metrics use. The generator recomputes and *verifies* each item's intended roles
-before emitting it (`oodgen/schema.make_pick_one_item`), so a mislabelled item
+before emitting it (`utils.ood_schema.make_pick_one_item`), so a mislabelled item
 fails at generation time.
 
 ## Family summary
@@ -249,11 +250,13 @@ fails at generation time.
 
 
 def main() -> None:
-    files = sorted(ITEMS.glob("*.jsonl"))
-    loaded = {p.stem: [json.loads(l) for l in p.read_text().splitlines() if l.strip()]
-              for p in files}
     order = ["embedded_decision", "agentic_tool", "verbal_uncertainty",
              "open_ended_allocation", "calibration_threshold"]
+    loaded = {
+        fam: [json.loads(l) for l in
+              (TASKS_ROOT / fam / "items.jsonl").read_text().splitlines() if l.strip()]
+        for fam in order
+    }
 
     rows = []
     for fam in order:

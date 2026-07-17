@@ -36,25 +36,36 @@ from stagehand import Flow, live_dashboard, serve
 EXP_DIR = Path(__file__).resolve().parent           # experiments/ood-evals/
 REPO_ROOT = Path(__file__).resolve().parents[2]      # repo root (library + src/)
 sys.path.insert(0, str(REPO_ROOT / "src"))
+sys.path.insert(0, str(REPO_ROOT / "src" / "eval"))  # utils.* + the task dirs
 sys.path.insert(0, str(EXP_DIR))
 
-from oodgen import schema  # noqa: E402
-from oodgen import scorers  # noqa: E402
-from oodgen.families import (  # noqa: E402
-    agentic,
-    allocation,
-    calibration,
-    embedded,
-    verbal,
-)
+import importlib.util as _ilu  # noqa: E402
 
-GENERATORS = {
-    embedded.FAMILY: embedded.generate,
-    agentic.FAMILY: agentic.generate,
-    verbal.FAMILY: verbal.generate,
-    allocation.FAMILY: allocation.generate,
-    calibration.FAMILY: calibration.generate,
-}
+from utils.ood_schema import read_jsonl, write_jsonl  # noqa: E402
+from utils.ood_scoring import score_item  # noqa: E402
+
+# The OOD suite now lives under src/eval/tasks/: each family owns its
+# generator.py and its committed items.jsonl (this flow only orchestrates them).
+TASKS_ROOT = REPO_ROOT / "src" / "eval" / "tasks"
+
+
+def _load_generator(family: str):
+    """Load a family's ``generator.py`` by file path.
+
+    Loading the module directly (rather than ``import tasks.<family>.generator``)
+    keeps construct-only mode free of the inspect_ai import that the tasks
+    package pulls in; the generator itself needs only ``utils`` on sys.path.
+    """
+    path = TASKS_ROOT / family / "generator.py"
+    spec = _ilu.spec_from_file_location(f"_oodgen_{family}", path)
+    mod = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.generate
+
+
+def _items_path(family: str) -> Path:
+    """The committed item file for a family, in its own task dir."""
+    return TASKS_ROOT / family / "items.jsonl"
 
 # summarize_results keys we carry onto each result row (metric-shape output).
 _METRIC_KEYS = (
@@ -111,8 +122,10 @@ def main() -> None:
     cfg = yaml.safe_load((EXP_DIR / args.config).read_text())
     load_env()
     base_seed = int(cfg.get("seed", 0))
-    items_dir = EXP_DIR / cfg.get("items_dir", "items")
-    items_dir.mkdir(parents=True, exist_ok=True)
+    # Each family writes items.jsonl into its own task dir under src/eval/tasks.
+    GENERATORS = {fam: _load_generator(fam) for fam in cfg["families"]}
+    manifest_dir = EXP_DIR / "runs"
+    manifest_dir.mkdir(parents=True, exist_ok=True)
     do_eval = bool(cfg.get("arms") and cfg.get("eval"))
 
     specs = [
@@ -122,12 +135,13 @@ def main() -> None:
 
     async def generate_family(spec: dict) -> dict:
         items = GENERATORS[spec["family"]](spec["count"], seed=spec["seed"])
-        out = items_dir / f"{spec['family']}.jsonl"
-        schema.write_jsonl(str(out), items)
-        return {"family": spec["family"], "count": len(items), "path": str(out.name)}
+        out = _items_path(spec["family"])
+        write_jsonl(str(out), items)
+        return {"family": spec["family"], "count": len(items),
+                "path": str(out.relative_to(REPO_ROOT))}
 
     def construct_items() -> int:
-        """(Re)generate every family's items on disk + MANIFEST.json.
+        """(Re)generate every family's items into its task dir + a MANIFEST.
 
         Deterministic and offline (seeded; no model calls). In eval mode this is
         an idempotent pre-step — the committed items are byte-identical — run
@@ -136,24 +150,25 @@ def main() -> None:
         rows = []
         for spec in specs:
             items = GENERATORS[spec["family"]](spec["count"], seed=spec["seed"])
-            schema.write_jsonl(str(items_dir / f"{spec['family']}.jsonl"), items)
+            out = _items_path(spec["family"])
+            write_jsonl(str(out), items)
             rows.append({"family": spec["family"], "count": len(items),
-                         "path": f"{spec['family']}.jsonl"})
+                         "path": str(out.relative_to(REPO_ROOT))})
         total = sum(r["count"] for r in rows)
         status = ("constructed — evaluation run" if do_eval
                   else "constructed — awaiting researcher eyeball before any evaluation")
-        (items_dir / "MANIFEST.json").write_text(json.dumps(
+        (manifest_dir / "items-MANIFEST.json").write_text(json.dumps(
             {"families": rows, "total_items": total, "status": status}, indent=2) + "\n")
-        print(f"generated {total} items across {len(rows)} families → {items_dir}")
+        print(f"generated {total} items across {len(rows)} families → src/eval/tasks/")
         return total
 
     async def manifest(results) -> dict:
         rows = [r for r in results if isinstance(r, dict)]
         total = sum(r["count"] for r in rows)
         status = "constructed — awaiting researcher eyeball before any evaluation"
-        (items_dir / "MANIFEST.json").write_text(json.dumps(
+        (manifest_dir / "items-MANIFEST.json").write_text(json.dumps(
             {"families": rows, "total_items": total, "status": status}, indent=2) + "\n")
-        print(f"generated {total} items across {len(rows)} families → {items_dir}")
+        print(f"generated {total} items across {len(rows)} families → src/eval/tasks/")
         print("NO evaluation performed: awaiting researcher eyeball (see REVIEW.md).")
         return {"total_items": total, "families": rows}
 
@@ -167,7 +182,7 @@ def main() -> None:
 
         from serving import client as make_client
         from generation import generate_openai
-        from scoring import summarize_results
+        from utils.scoring import summarize_results
 
         eval_backend = ev.get("backend", "inspect")  # inspect (default) | legacy
         limit = ev.get("limit_per_family")
@@ -187,14 +202,14 @@ def main() -> None:
             try:
                 return await it.run_ood_inspect(
                     model=model, base_url=base_url, families=list(cfg["families"]),
-                    ev=ev, items_dir=str(items_dir), system_prompt=system_prompt,
+                    ev=ev, system_prompt=system_prompt,
                     arm=name, mode=arm.get("mode"),
                 )
             finally:
                 stop()
 
         def load_family_items(family: str) -> list:
-            items = schema.read_jsonl(str(items_dir / f"{family}.jsonl"))
+            items = read_jsonl(str(_items_path(family)))
             return items[:limit] if limit else items
 
         async def eval_arm(arm: dict) -> list:
@@ -236,7 +251,7 @@ def main() -> None:
                         max_new_tokens=ev["max_new_tokens"],
                     )
                     scored = [
-                        scorers.score_item(it, g["text"], finish_reason=g.get("finish_reason"))
+                        score_item(it, g["text"], finish_reason=g.get("finish_reason"))
                         for it, g in zip(items, gens)
                     ]
                     # Per-item dump (gitignored): keep the response + scored row

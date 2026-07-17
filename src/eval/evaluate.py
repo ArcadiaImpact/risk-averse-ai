@@ -24,8 +24,8 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 import torch
 
-from answer_parser import infer_option_label_style, parse_choice_with_strategy
-from dataset_schema_utils import ensure_option_level_dataframe
+from utils.answer_parser import infer_option_label_style, parse_choice_with_strategy
+from utils.dataset_schema_utils import ensure_option_level_dataframe
 from risk_averse_prompts import (
     CLI_SYSTEM_PROMPT_SOURCE,
     DATASET_DEFAULT_SYSTEM_PROMPT_SOURCE,
@@ -73,7 +73,7 @@ from situations import (
     resolve_path,
     validate_dataset_columns,
 )
-from scoring import (
+from utils.scoring import (
     count_parse_failures,
     format_pct_metric,
     project_failed_response_for_output,

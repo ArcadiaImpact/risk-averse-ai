@@ -21,6 +21,14 @@ inside `experiments/<slug>/`, all consuming `src/`.
 ```
 src/
   eval/                          # the evals, first-party (lifted from riskaverseAIs/evaluation @ 79f2da1)
+    tasks/<name>/                # one dir per runnable task; the SOURCE OF TRUTH for that task —
+                                 #   benchmark dirs hold data/<file>.csv + task.py;
+                                 #   OOD dirs hold items.jsonl + generator.py + task.py (+ scoring.py where peculiar);
+                                 #   mmlu_redux holds loader.py + scoring.py + task.py
+    utils/                       # shared, defined once: answer_parser, scoring, dataset_schema_utils,
+                                 #   cara/lotteries, ood_{schema,fmt,common,scoring}, inspect_shared
+    runner.py, situations.py, generation.py, evaluate.py, config.py …   # legacy library path (parity anchor)
+  train/data/                    # the benchmark's TRAINING CSVs (SFT/DPO arms) — not eval data
   third_party/riskaverseAIs/     # upstream benchmark, MINUS evaluation/ — reference-only
   constitution/                  # constitution.py (aligne subset) + constitutions/*.json + prompts/
   serving/                       # OpenAI-compatible shim over Tinker sampling (aligne subset, extended for the benchmark's sampling params)
@@ -55,11 +63,19 @@ resolve relative to the experiment dir.
   beside them in `src/constitution/prompts/`.
 - **The eval interface is inspect-ai** (`src/eval/tasks/`): one subdirectory
   per runnable task (the seven benchmark datasets, MMLU-Redux, the five OOD
-  families — 13 in all), each `tasks/<name>/task.py` exposing a single `@task`.
-  The shared machinery lives once in `tasks/_core.py` (scorers reusing the
-  first-party parsers verbatim, metrics handed to `scoring.summarize_results`
-  so rates can't drift, the `riskaverse_model`/`launch_shim` model seam, and
-  `evallog_to_row` mapping an `EvalLog` to the flows' `results.jsonl` shape);
+  families — 13 in all). Each `tasks/<name>/` is the source of truth for its
+  task: its data (`data/*.csv` for benchmark tasks, `items.jsonl` for OOD) and
+  everything peculiar to it — `task.py` (its `@task`), the OOD `generator.py`,
+  and any task-specific scoring (e.g. `open_ended_allocation/scoring.py`, the
+  `mmlu_redux/` loader + scorer). Genuinely shared code lives once in
+  `src/eval/utils/`: `answer_parser`, `scoring.summarize_results`,
+  `dataset_schema_utils`, the CARA/lottery math (`cara`, `lotteries`) and OOD
+  generator machinery (`ood_schema`, `ood_fmt`, `ood_common`), the shared
+  pick-one OOD scorer (`ood_scoring`), and the cross-task inspect glue
+  (`inspect_shared`: the `riskaverse_model`/`launch_shim` model seam, the
+  row metrics reusing `summarize_results` so rates can't drift, sample builders,
+  and `evallog_to_row`). `tasks/_core.py` is just the generic Task assembly
+  (the benchmark/OOD builders, the two scorers, the playback solver);
   `tasks/__init__.py` is the `name -> factory` registry plus the public API the
   flows import (`run_benchmark_inspect` / `run_ood_inspect`). Models reach
   inspect through `riskaverse_model(...)` over the `src/serving` tinker_shim

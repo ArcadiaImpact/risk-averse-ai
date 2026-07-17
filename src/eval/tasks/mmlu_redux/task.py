@@ -1,9 +1,10 @@
 """mmlu_redux: MMLU-Redux 5-shot generative exact-match as an inspect Task.
 
-The one non-gamble task in the battery: it reuses ``evaluate_mmlu_redux``'s
-loader, prompt builder and last-letter parser verbatim, and the MMLU accuracy /
-parse-rate metrics live beside the scorer in :mod:`tasks._core`. top_k is left
-"off" (the paper-facing MMLU protocol), matching the shim.
+The one non-gamble task in the battery: its data loading / prompt building /
+last-letter parsing live in :mod:`tasks.mmlu_redux.loader` and its scorer +
+accuracy/parse-rate metrics in :mod:`tasks.mmlu_redux.scoring` — both owned by
+this dir. top_k is left "off" (the paper-facing MMLU protocol), matching the
+shim.
 """
 from __future__ import annotations
 
@@ -14,7 +15,8 @@ from inspect_ai.dataset import MemoryDataset, Sample
 from inspect_ai.model import GenerateConfig
 from inspect_ai.solver import generate
 
-from .._core import _input_messages, mmlu_scorer
+from .._core import _input_messages
+from .scoring import mmlu_scorer
 
 
 @task
@@ -32,7 +34,7 @@ def mmlu_task(
     """MMLU-Redux 5-shot generative exact-match as a Task, reusing
     ``evaluate_mmlu_redux``'s loader / prompt builder / last-letter parser.
     ``max_eval_examples_per_subject`` is the capped-per-subject knob."""
-    from evaluate_mmlu_redux import ALL_SUBJECTS, build_eval_items, load_mmlu_redux
+    from .loader import ALL_SUBJECTS, build_eval_items, load_mmlu_redux
 
     subs = subjects or ALL_SUBJECTS
     data = load_mmlu_redux(subs)

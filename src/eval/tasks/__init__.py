@@ -15,6 +15,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Optional
 
+_TASKS_DIR = Path(__file__).resolve().parent  # each OOD family's items.jsonl lives here
+
 from ._core import (
     BENCHMARK_DATASETS,
     METRIC_KEYS,
@@ -129,21 +131,26 @@ async def run_benchmark_inspect(
 
 async def run_ood_inspect(
     *, model: str, base_url: str, families, ev: dict,
-    items_dir: str, system_prompt: Optional[str], arm: str,
+    items_dir: Optional[str] = None, system_prompt: Optional[str], arm: str,
     mode: Optional[str] = None, extra: Optional[dict] = None,
 ) -> List[dict]:
     """Evaluate one arm across the OOD ``families`` through the shim; return rows
     in the ood-evals flow's shape (arm/mode/family/num_items + METRIC_KEYS).
-    Each family is dispatched to its own task in ``OOD_TASKS``."""
+    Each family is dispatched to its own task in ``OOD_TASKS``, reading its
+    committed ``items.jsonl`` from its own task dir (``items_dir`` overrides the
+    lookup with a flat ``<family>.jsonl`` directory when given)."""
     from inspect_ai import eval_async
-    from oodgen import schema as ood_schema  # type: ignore
+
+    from utils.ood_schema import read_jsonl
 
     target = riskaverse_model(model, base_url=base_url,
                               max_connections=ev.get("concurrency", 48))
     limit = ev.get("limit_per_family")
     tasks, metas = [], []
     for fam in families:
-        items = ood_schema.read_jsonl(str(Path(items_dir) / f"{fam}.jsonl"))
+        items_path = (Path(items_dir) / f"{fam}.jsonl" if items_dir
+                      else _TASKS_DIR / fam / "items.jsonl")
+        items = read_jsonl(str(items_path))
         if limit:
             items = items[:limit]
         tasks.append(OOD_TASKS[fam](

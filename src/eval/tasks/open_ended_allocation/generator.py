@@ -13,9 +13,9 @@ from __future__ import annotations
 import random
 from typing import List
 
-from .. import fmt
-from ..schema import Item, make_allocation_item
-from .. import lotteries
+from utils import ood_fmt as fmt
+from utils.ood_schema import Item, make_allocation_item
+from utils import lotteries
 
 FAMILY = "open_ended_allocation"
 AXIS = "pick-one format (open-ended resource split, scored by implied posture)"
