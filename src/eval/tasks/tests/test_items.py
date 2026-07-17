@@ -13,12 +13,12 @@ import re
 
 import pytest
 
-from oodgen import cara
+from utils import cara
 
-ITEMS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "items"
-)
-FILES = sorted(glob.glob(os.path.join(ITEMS_DIR, "*.jsonl")))
+# Each OOD family owns its committed items.jsonl in its own task dir; this test
+# lives at src/eval/tasks/tests/, so the families are the sibling dirs one level up.
+TASKS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FILES = sorted(glob.glob(os.path.join(TASKS_DIR, "*", "items.jsonl")))
 
 
 def _load(path):

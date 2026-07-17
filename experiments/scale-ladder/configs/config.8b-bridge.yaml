@@ -50,7 +50,7 @@ distill:
 train:
   out_root: experiments/scale-ladder/runs/train
   sft:
-    cot_csv: src/eval/data/2026_03_22_low_stakes_training_set_1000_situations_with_CoTs.csv
+    cot_csv: src/train/data/2026_03_22_low_stakes_training_set_1000_situations_with_CoTs.csv
     renderer: qwen3
     lora_rank: 32
     lr: 0.0001

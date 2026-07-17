@@ -1,5 +1,4 @@
 runs/
-items/MANIFEST.json
 __pycache__/
 *.pyc
 # The root .gitignore ignores every `results/` dir; re-include ours so the

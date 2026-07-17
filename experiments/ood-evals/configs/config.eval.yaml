@@ -50,7 +50,7 @@ arms:
 eval:
   # Eval backend: `inspect` (the default — the OOD families as inspect_ai Tasks
   # over the tinker_shim; src/eval/inspect_tasks.py) or `legacy` (in-process
-  # TinkerChatClient + oodgen scorers). Scorer parity is gated by
+  # TinkerChatClient + utils.ood_scoring). Scorer parity is gated by
   # scripts/inspect_parity.py.
   backend: inspect
   # In-process TinkerChatClient per arm (src/serving) — no GPU pods, no shim.

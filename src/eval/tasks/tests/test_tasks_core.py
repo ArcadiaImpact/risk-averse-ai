@@ -11,17 +11,9 @@ allocation / tool-call scorers) live in the per-task test files beside them.
 from __future__ import annotations
 
 import math
-import sys
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
-for p in (REPO_ROOT / "src", REPO_ROOT / "src" / "eval",
-          REPO_ROOT / "experiments" / "ood-evals"):
-    if str(p) not in sys.path:
-        sys.path.insert(0, str(p))
 
 pytest.importorskip("inspect_ai")
 
@@ -29,7 +21,7 @@ import tasks as tasks_pkg  # noqa: E402
 from tasks import _core as core  # noqa: E402
 from config import EvalConfig  # noqa: E402
 from runner import _build_result_row  # noqa: E402
-from scoring import summarize_results  # noqa: E402
+from utils.scoring import summarize_results  # noqa: E402
 
 
 def _state(metadata: dict, completion: str, stop_reason: str = "stop"):
@@ -128,25 +120,6 @@ def test_metrics_reproduce_summarize_results(bench_case):
     assert core.num_total()(scores) == float(len(legacy_rows))
     assert core.num_parse_failed()(scores) == float(
         sum(1 for r in legacy_rows if r["option_type"] is None))
-
-
-# --------------------------------------------------------------------------- #
-# MMLU scorer (shared mmlu_scorer)
-# --------------------------------------------------------------------------- #
-def test_mmlu_scorer_letter_and_unparsed():
-    score = core.mmlu_scorer()
-    target = SimpleNamespace(text="B")
-    hit = _run(score(_state({}, "After reasoning, the answer is B."), target))
-    assert hit.metadata["parsed"] is True
-    assert float(hit.value) == 1.0
-
-    miss = _run(score(_state({}, "The answer is A."), target))
-    assert miss.metadata["parsed"] is True
-    assert float(miss.value) == 0.0
-
-    unparsed = _run(score(_state({}, "I'm not sure, sorry."), target))
-    assert unparsed.metadata["parsed"] is False
-    assert math.isfinite(float(unparsed.value))
 
 
 # --------------------------------------------------------------------------- #

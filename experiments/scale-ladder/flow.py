@@ -142,17 +142,17 @@ def main() -> None:
     if not (eval_dir / "evaluate.py").exists():
         raise SystemExit("src/eval/evaluate.py missing — broken checkout?")
 
-    # src/eval modules import siblings by bare name; the OOD scorers live under
-    # the ood-evals study (read-only import — this flow never writes there).
+    # src/eval modules import siblings by bare name; the OOD scorers + item
+    # schema now live under src/eval (utils.*), each family's items.jsonl in its
+    # own task dir (read-only — this flow never writes there).
     sys.path.insert(0, str(eval_dir))
-    sys.path.insert(0, str(OOD_DIR))
     from config import EvalConfig
     from runner import run_evaluation
     from serving import client as make_client
     from generation import generate_openai
-    from scoring import summarize_results
-    from oodgen import scorers as ood_scorers
-    from oodgen import schema as ood_schema
+    from utils.scoring import summarize_results
+    from utils import ood_scoring as ood_scorers
+    from utils import ood_schema
 
     renderers = ev.get("renderers", {})
     # Instrument-matched: both flavors default to the rung's NO-THINK renderer.
@@ -160,7 +160,7 @@ def main() -> None:
     no_think_renderer = renderers.get("no_think", "qwen3_disable_thinking")
     ood_cfg = ev.get("ood", {})
     ood_renderer = ood_cfg.get("renderer", no_think_renderer)
-    ood_items_dir = OOD_DIR / ood_cfg.get("items_dir", "items")
+    ood_tasks_root = eval_dir / "tasks"  # each family owns tasks/<family>/items.jsonl
 
     # ---- training step fns (identical recipe construction to constitution-distill) ---
     def build_train_prompts(n_rows: int, prompts_name: str, tag: str) -> Path:
@@ -353,7 +353,7 @@ def main() -> None:
             pooled: list[dict] = []
             try:
                 for family in ood_families:
-                    items = ood_schema.read_jsonl(str(ood_items_dir / f"{family}.jsonl"))
+                    items = ood_schema.read_jsonl(str(ood_tasks_root / family / "items.jsonl"))
                     prompts = [it["prompt"] for it in items]
                     gens = await generate_openai(
                         ood_client, eval_prompts=prompts,

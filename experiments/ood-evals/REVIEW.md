@@ -1,5 +1,10 @@
 # OOD risk-attitude eval suite — review pack
 
+> **Note (post-migration):** each family's committed `items.jsonl`, its
+> `generator.py`, and its scoring now live under `src/eval/tasks/<family>/`
+> (shared OOD math/schema in `src/eval/utils/`); this flow only orchestrates
+> them. The reviewed content below is unchanged.
+
 *Construct-only check-in. No model has been evaluated. The families below keep
 the benchmark's underlying question — does the agent choose the CARA(α=0.01)-
 optimal action over its **own** resources? — while each drops a different

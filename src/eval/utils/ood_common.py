@@ -4,8 +4,8 @@ from __future__ import annotations
 import random
 from typing import Callable, Dict, List, Tuple
 
-from .. import fmt
-from ..schema import VERBAL_PROBABILITY
+from . import ood_fmt as fmt
+from .ood_schema import VERBAL_PROBABILITY
 
 
 def choose_order(rng: random.Random) -> bool:
@@ -60,7 +60,7 @@ def verbal_spec(rng: random.Random, spec: dict) -> dict:
     Returns a NEW spec whose ``probs`` are exactly the verbal centers (so the
     computed labels use the same numbers the model reads) plus a ``phrases``
     list. Only used by the verbal family; the snapped spec must be re-verified
-    by the caller via :func:`oodgen.schema.make_pick_one_item`.
+    by the caller via :func:`utils.ood_schema.make_pick_one_item`.
     """
     phrases = [_closest_phrase(p) for p in spec["probs"]]
     probs = [VERBAL_PROBABILITY[ph] for ph in phrases]

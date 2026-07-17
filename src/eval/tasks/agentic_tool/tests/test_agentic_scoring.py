@@ -2,29 +2,23 @@
 
 The agentic_tool family is peculiar: the choice is read from a tool call (the
 tool-call adapter) rather than free text. This exercises the shared ood_scorer
-against this family's items and asserts per-record agreement with the legacy
-oodgen scorer.
+against this family's items and asserts per-record agreement with the legacy score_item dispatch.
 """
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-for p in (REPO_ROOT / "src", REPO_ROOT / "src" / "eval",
-          REPO_ROOT / "experiments" / "ood-evals"):
-    if str(p) not in sys.path:
-        sys.path.insert(0, str(p))
-
 pytest.importorskip("inspect_ai")
 
 from tasks import _core as core  # noqa: E402
-from oodgen import schema as ood_schema, scorers as ood_scorers  # noqa: E402
+from utils import ood_schema  # noqa: E402
+from utils import ood_scoring as ood_scorers  # noqa: E402
 
 FAMILY = "agentic_tool"
+ITEMS = Path(__file__).resolve().parents[1] / "items.jsonl"
 
 
 def _state(metadata: dict, completion: str, stop_reason: str = "stop"):
@@ -42,8 +36,7 @@ def _run(coro):
 
 
 def _items(n: int = 4):
-    path = REPO_ROOT / "experiments/ood-evals/items" / f"{FAMILY}.jsonl"
-    return ood_schema.read_jsonl(str(path))[:n]
+    return ood_schema.read_jsonl(str(ITEMS))[:n]
 
 
 def test_pickone_scorer_matches_legacy():

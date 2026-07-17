@@ -12,7 +12,7 @@ Procedure (per the task spec):
      standard paper-facing generation config) — the in-process TinkerChatClient
      is the legacy runner's own generation path. Datasets:
        * medium_stakes_validation @50, steals_test @50 (benchmark gambles);
-       * the OOD allocation + calibration_threshold families @all (oodgen).
+       * the OOD allocation + calibration_threshold families  (utils.ood_scoring + task dirs).
      Raw responses are cached under ``<out>/raw/`` (gitignored).
   2. Score those responses two ways:
        * LEGACY: scoring.summarize_results over the runner's own result rows;
@@ -45,7 +45,6 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 sys.path.insert(0, str(REPO_ROOT / "src" / "eval"))
-sys.path.insert(0, str(REPO_ROOT / "experiments" / "ood-evals"))
 
 os.environ.setdefault("INSPECT_DISPLAY", "none")
 
@@ -108,9 +107,10 @@ async def main() -> None:
     from config import EvalConfig
     from generation import generate_openai
     from runner import run_evaluation
-    from scoring import summarize_results
+    from utils.scoring import summarize_results
     from serving import client as make_client
-    from oodgen import schema as ood_schema, scorers as ood_scorers
+    from utils import ood_schema
+    from utils import ood_scoring as ood_scorers
     from inspect_ai import eval_async
 
     p = argparse.ArgumentParser(description=__doc__)
@@ -189,14 +189,14 @@ async def main() -> None:
     finally:
         await client.aclose()
 
-    # ---- OOD families (allocation + calibration) via oodgen + inspect playback -
+    # ---- OOD families (allocation + calibration) via utils.ood_scoring + inspect playback -
     ood_client = make_client(model=BASE_MODEL, renderer=THINK_RENDERER,
                             cache_path=raw / "ood_cache.jsonl", concurrency=24)
     try:
         for fam in ("open_ended_allocation", "calibration_threshold"):
             t0 = time.monotonic()
             items = ood_schema.read_jsonl(
-                str(REPO_ROOT / "experiments/ood-evals/items" / f"{fam}.jsonl"))
+                str(REPO_ROOT / "src/eval/tasks" / fam / "items.jsonl"))
             prompts = [i["prompt"] for i in items]
             gens = await generate_openai(
                 ood_client, eval_prompts=prompts, system_prompt="",
